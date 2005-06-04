@@ -5,7 +5,7 @@ use base qw/Class::Data::Inheritable/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_classdata('_cache_page');
@@ -75,7 +75,8 @@ this, expiration defaults to 300 seconds (5 minutes).
 Enabling this value will cause Catalyst to set the correct HTTP headers to allow
 browsers and proxy servers to cache your page.  This will further reduce the load on
 your server.  The headers are set in such a way that the browser/proxy cache will
-expire at the same time as your cache.
+expire at the same time as your cache.  This will overwrite the following headers if you
+are you setting them elsewhere: Cache-Control, Expires, and Last-Modified.
 
     auto_cache => [
         $uri,
@@ -181,7 +182,18 @@ sub dispatch {
             if ( $c->config->{page_cache}->{debug} );
             
         $c->_page_cache_used( 1 );
+        
+        if ( $c->req->headers->header('If-Modified-Since') ) {
+            if ( $c->req->headers->if_modified_since == $data->{create_time} ) {
+                $c->res->status(304); # Not Modified
+                $c->res->headers->remove_content_headers;
+                return 1;
+            }
+        }
+        
         $c->res->body( $data->{body} );
+        $c->res->content_type( $data->{content_type} ) if ( $data->{content_type} );
+        $c->res->content_encoding( $data->{content_encoding} ) if ( $data->{content_encoding} );
         
         if ( $c->config->{page_cache}->{set_http_headers} ) {
             $c->res->headers->header( 'Cache-Control', "max-age=" . 
@@ -213,7 +225,7 @@ sub finalize {
         $c->log->warn( "Please load a Catalyst::Plugin::Cache module to enable page caching." );
     } else {        
         # is this page part of the auto_cache list?
-        if ( scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
+        if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
             my $path = "/" . $c->req->path;
             foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
                 if ( $path =~ /^$auto$/ ) {
@@ -234,6 +246,8 @@ sub finalize {
             # Some caches don't support expirations, so we do it manually
             my $data = {
                 body => $c->res->body,
+                content_type => $c->res->content_type,
+                content_encoding => $c->res->content_encoding,
                 create_time => time,
                 expire_time => time + $c->_cache_page,
             };

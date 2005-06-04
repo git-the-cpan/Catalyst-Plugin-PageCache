@@ -1,4 +1,10 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.02    2005-06-04 18:13:00
+        - Preserve Content-Type and Content-Encoding of cached data.
+        - Send 304 Not Modified header when a browser or proxy requests
+          If-Modified-Since and the data is still cached.
+        - Don't check the auto list if the page will already be cached.
+
 0.01    2005-06-04 12:00:00
         - initial release
