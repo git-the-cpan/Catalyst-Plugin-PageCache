@@ -57,8 +57,8 @@ CONFIGURATION
     to allow browsers and proxy servers to cache your page. This will
     further reduce the load on your server. The headers are set in such a
     way that the browser/proxy cache will expire at the same time as your
-    cache. This will overwrite the following headers if you are you setting
-    them elsewhere: Cache-Control, Expires, and Last-Modified.
+    cache. The Last-Modified header will be preserved if you have already
+    specified it.
 
         auto_cache => [
             $uri,

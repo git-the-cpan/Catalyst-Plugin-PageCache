@@ -1,17 +1,17 @@
 package Catalyst::Plugin::PageCache;
 
 use strict;
-use base qw/Class::Data::Inheritable/;
+use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # Do we need to cache the current page?
-__PACKAGE__->mk_classdata('_cache_page');
+__PACKAGE__->mk_accessors('_cache_page');
 
 # Keeps track of whether the current request was served from cache
-__PACKAGE__->mk_classdata('_page_cache_used');
+__PACKAGE__->mk_accessors('_page_cache_used');
 
 =head1 NAME
 
@@ -75,8 +75,8 @@ this, expiration defaults to 300 seconds (5 minutes).
 Enabling this value will cause Catalyst to set the correct HTTP headers to allow
 browsers and proxy servers to cache your page.  This will further reduce the load on
 your server.  The headers are set in such a way that the browser/proxy cache will
-expire at the same time as your cache.  This will overwrite the following headers if you
-are you setting them elsewhere: Cache-Control, Expires, and Last-Modified.
+expire at the same time as your cache.  The Last-Modified header will be preserved
+if you have already specified it.
 
     auto_cache => [
         $uri,
@@ -183,7 +183,7 @@ sub dispatch {
             
         $c->_page_cache_used( 1 );
         
-        if ( $c->req->headers->header('If-Modified-Since') ) {
+        if ( $c->req->headers->if_modified_since ) {
             if ( $c->req->headers->if_modified_since == $data->{create_time} ) {
                 $c->res->status(304); # Not Modified
                 $c->res->headers->remove_content_headers;
@@ -196,10 +196,9 @@ sub dispatch {
         $c->res->content_encoding( $data->{content_encoding} ) if ( $data->{content_encoding} );
         
         if ( $c->config->{page_cache}->{set_http_headers} ) {
-            $c->res->headers->header( 'Cache-Control', "max-age=" . 
-                ( $data->{expire_time} - time ) );
-            $c->res->headers->header( 'Expires', time2str( $data->{expire_time} ) );
-            $c->res->headers->header( 'Last-Modified', time2str( $data->{create_time} ) );
+            $c->res->headers->header( 'Cache-Control', "max-age=" . ( $data->{expire_time} - time ) );
+            $c->res->headers->expires( $data->{expire_time} );
+            $c->res->headers->last_modified( $data->{create_time} );
         }
     } else {
         return $c->NEXT::dispatch(@_);
@@ -248,7 +247,7 @@ sub finalize {
                 body => $c->res->body,
                 content_type => $c->res->content_type,
                 content_encoding => $c->res->content_encoding,
-                create_time => time,
+                create_time => $c->res->headers->last_modified || time,
                 expire_time => time + $c->_cache_page,
             };
             $c->cache->set( $key, $data );
@@ -272,8 +271,8 @@ Reset internal variables.
 sub prepare_request {
     my $c = shift;
     
-    $c->_cache_page( 0 );
-    $c->_page_cache_used( 0 );
+#    $c->_cache_page( 0 );
+#    $c->_page_cache_used( 0 );
     
     return $c->NEXT::prepare_request(@_);
 }

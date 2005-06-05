@@ -1,5 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.03    2005-06-04 22:30:00
+        - Switched to Class::Accessor::Fast
+        - Preserve Last-Modified time of the cached data.
+
 0.02    2005-06-04 18:13:00
         - Preserve Content-Type and Content-Encoding of cached data.
         - Send 304 Not Modified header when a browser or proxy requests
