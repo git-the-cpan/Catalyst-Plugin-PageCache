@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -260,21 +260,6 @@ sub finalize {
     }   
             
     return $c->NEXT::finalize(@_);
-}
-
-=item prepare_request (extended)
-
-Reset internal variables.
-
-=cut
-
-sub prepare_request {
-    my $c = shift;
-    
-#    $c->_cache_page( 0 );
-#    $c->_page_cache_used( 0 );
-    
-    return $c->NEXT::prepare_request(@_);
 }
 
 =item setup
