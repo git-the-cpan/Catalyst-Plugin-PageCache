@@ -25,7 +25,8 @@ DESCRIPTION
     they are served to your visitors as fast as possible. This method of
     caching is very useful for withstanding a Slashdotting, for example.
 
-    This plugin requires that you also load a Cache plugin.
+    This plugin requires that you also load a Cache plugin. Please see the
+    Known Issues when choosing a cache backend.
 
 WARNINGS
     PageCache should be placed at the end of your plugin list.
@@ -105,9 +106,6 @@ CONFIGURATION
     finalize (extended)
         Cache the page output if requested.
 
-    prepare_request (extended)
-        Reset internal variables.
-
     setup
         Setup default values.
 
@@ -118,6 +116,13 @@ KNOWN ISSUES
     It is not currently possible to cache pages served from the Static
     plugin. If you're concerned enough about performance to use this plugin,
     you should be serving static files directly from your web server anyway.
+
+    Cache::FastMmap does not have the ability to specify different
+    expiration times for cached data. Therefore, if your
+    MyApp->config->{cache}->{expires} value is set to anything other than 0,
+    you may experience problems with the clear_cached_page method, because
+    the cache index may be removed. For best results, you may wish to use
+    Cache::FileCache or Cache::Memcached as your cache backend.
 
 SEE ALSO
     Catalyst, Catalyst::Plugin::Cache::FastMmap,

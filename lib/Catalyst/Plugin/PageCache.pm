@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -43,7 +43,8 @@ cache the full output of different pages so they are served to your visitors as
 fast as possible.  This method of caching is very useful for withstanding a
 Slashdotting, for example.
 
-This plugin requires that you also load a Cache plugin.
+This plugin requires that you also load a Cache plugin.  Please see the Known Issues
+when choosing a cache backend.
 
 =head1 WARNINGS
 
@@ -139,7 +140,7 @@ sub clear_cached_page {
     
     my $removed = 0;
     
-    my $index = $c->cache->get( "_page_cache_index" );
+    my $index = $c->cache->get( "_page_cache_index" ) || {};
     foreach my $key ( keys %{$index} ) {
         if ( $key =~ /^$uri$/ ) {
             $c->cache->remove( $uri );
@@ -149,7 +150,8 @@ sub clear_cached_page {
                 if ( $c->config->{page_cache}->{debug} );
         }
     }
-    $c->cache->set( "_page_cache_index", $index ) if ( $removed );
+    $c->cache->set( "_page_cache_index", $index, 
+        $c->config->{page_cache}->{no_expire} ) if ( $removed );
 }
 
 =item dispatch (extended)
@@ -174,6 +176,12 @@ sub dispatch {
             $c->log->debug( "Expiring $key from page cache" )
                 if ( $c->config->{page_cache}->{debug} );
             $c->cache->remove( $key );
+            
+            my $index = $c->cache->get( "_page_cache_index" ) || {};
+            delete $index->{$key};
+            $c->cache->set( "_page_cache_index", $index, 
+                $c->config->{page_cache}->{no_expire} );
+            
             return $c->NEXT::dispatch(@_);
         }
         
@@ -255,7 +263,8 @@ sub finalize {
             # Keep an index cache of all pages that have been cached, for use with clear_cached_page
             my $index = $c->cache->get( "_page_cache_index" ) || {};
             $index->{$key} = 1;
-            $c->cache->set( "_page_cache_index", $index ); # XXX: how to make sure this never expires?
+            $c->cache->set( "_page_cache_index", $index, 
+                $c->config->{page_cache}->{no_expire} );
         }
     }   
             
@@ -274,6 +283,21 @@ sub setup {
     $c->config->{page_cache}->{expires} ||= 60 * 5;
     $c->config->{page_cache}->{set_http_headers} ||= 0;
     $c->config->{page_cache}->{debug} ||= 0;
+    
+    # detect the cache plugin being used and set appropriate 
+    # never-expires syntax
+    if ( $c->can('cache') ) {
+        if ( $c->cache->can('get_object') ) {
+            # FileCache
+            $c->config->{page_cache}->{no_expire} = "never";
+        } elsif ( $c->cache->can('get_and_set') ) {
+            # FastMmap, it's not possible to set an expiration
+            $c->config->{page_cache}->{no_expire} = undef;
+        } elsif ( $c->cache->can('set_servers') ) {
+            # Memcached
+            $c->config->{page_cache}->{no_expire} = "never";
+        }
+    }
 
     return $c->NEXT::setup(@_);
 }
@@ -305,6 +329,12 @@ sub _page_cache_key {
 It is not currently possible to cache pages served from the Static plugin.  If you're concerned
 enough about performance to use this plugin, you should be serving static files directly from
 your web server anyway.
+
+Cache::FastMmap does not have the ability to specify different expiration times for cached
+data.  Therefore, if your MyApp->config->{cache}->{expires} value is set to anything other
+than 0, you may experience problems with the clear_cached_page method, because the cache
+index may be removed.  For best results, you may wish to use Cache::FileCache or Cache::Memcached
+as your cache backend.
 
 =head1 SEE ALSO
 

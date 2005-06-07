@@ -1,5 +1,12 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.05    2005-06-06 23:15:00
+        - Fixed bug in clear_cached_page when cache index is not
+          available.
+        - Added cache backend detection in order to properly keep the
+          cache index from expiring when possible.
+        - Remove page from cache index when it has expired.
+
 0.04    2005-06-05 16:20:00
         - Removed unnecessary prepare_request method.
 
