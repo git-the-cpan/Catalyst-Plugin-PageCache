@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -163,8 +163,6 @@ Bypass the dispatch phase and send cached content if available
 sub dispatch {
     my $c = shift;
     
-    return $c->NEXT::dispatch(@_) unless ( $c->can('cache') );
-    
     # never serve POST request pages from cache
     return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
     
@@ -228,45 +226,41 @@ sub finalize {
     # if we already served the current request from cache, we can skip the rest of this method
     return $c->NEXT::finalize(@_) if ( $c->_page_cache_used );
     
-    unless ( $c->can('cache') ) {
-        $c->log->warn( "Please load a Catalyst::Plugin::Cache module to enable page caching." );
-    } else {        
-        # is this page part of the auto_cache list?
-        if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
-            my $path = "/" . $c->req->path;
-            foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
-                if ( $path =~ /^$auto$/ ) {
-                    $c->log->debug( "Auto-caching page $path" )
-                        if ( $c->config->{page_cache}->{debug} );
-                    $c->cache_page;
-                    last;
-                }
+    # is this page part of the auto_cache list?
+    if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
+        my $path = "/" . $c->req->path;
+        foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
+            if ( $path =~ /^$auto$/ ) {
+                $c->log->debug( "Auto-caching page $path" )
+                    if ( $c->config->{page_cache}->{debug} );
+                $c->cache_page;
+                last;
             }
         }
+    }
+    
+    if ( $c->_cache_page ) {
+        my $key = $c->_page_cache_key;
+        $c->log->debug( "Caching page $key for " . $c->_cache_page . " seconds" )
+            if ( $c->config->{page_cache}->{debug} );
         
-        if ( $c->_cache_page ) {
-            my $key = $c->_page_cache_key;
-            $c->log->debug( "Caching page $key for " . $c->_cache_page . " seconds" )
-                if ( $c->config->{page_cache}->{debug} );
-            
-            # Cache some additional metadata along with the content
-            # Some caches don't support expirations, so we do it manually
-            my $data = {
-                body => $c->res->body,
-                content_type => $c->res->content_type,
-                content_encoding => $c->res->content_encoding,
-                create_time => $c->res->headers->last_modified || time,
-                expire_time => time + $c->_cache_page,
-            };
-            $c->cache->set( $key, $data );
-            
-            # Keep an index cache of all pages that have been cached, for use with clear_cached_page
-            my $index = $c->cache->get( "_page_cache_index" ) || {};
-            $index->{$key} = 1;
-            $c->cache->set( "_page_cache_index", $index, 
-                $c->config->{page_cache}->{no_expire} );
-        }
-    }   
+        # Cache some additional metadata along with the content
+        # Some caches don't support expirations, so we do it manually
+        my $data = {
+            body => $c->res->body,
+            content_type => $c->res->content_type,
+            content_encoding => $c->res->content_encoding,
+            create_time => $c->res->headers->last_modified || time,
+            expire_time => time + $c->_cache_page,
+        };
+        $c->cache->set( $key, $data );
+        
+        # Keep an index cache of all pages that have been cached, for use with clear_cached_page
+        my $index = $c->cache->get( "_page_cache_index" ) || {};
+        $index->{$key} = 1;
+        $c->cache->set( "_page_cache_index", $index, 
+            $c->config->{page_cache}->{no_expire} );
+    }
             
     return $c->NEXT::finalize(@_);
 }
@@ -280,6 +274,8 @@ Setup default values.
 sub setup {
     my $c = shift;
     
+    $c->NEXT::setup(@_);
+    
     $c->config->{page_cache}->{expires} ||= 60 * 5;
     $c->config->{page_cache}->{set_http_headers} ||= 0;
     $c->config->{page_cache}->{debug} ||= 0;
@@ -287,19 +283,16 @@ sub setup {
     # detect the cache plugin being used and set appropriate 
     # never-expires syntax
     if ( $c->can('cache') ) {
-        if ( $c->cache->can('get_object') ) {
-            # FileCache
-            $c->config->{page_cache}->{no_expire} = "never";
-        } elsif ( $c->cache->can('get_and_set') ) {
-            # FastMmap, it's not possible to set an expiration
+        if ( $c->cache->isa('Cache::FileCache') || 
+             $c->cache->isa('Cache::Memcached') ) {
+                 $c->config->{page_cache}->{no_expire} = "never";
+        } elsif ( $c->cache->isa('Cache::FastMmap') ) {
+            # In FastMmap, it's not possible to set an expiration
             $c->config->{page_cache}->{no_expire} = undef;
-        } elsif ( $c->cache->can('set_servers') ) {
-            # Memcached
-            $c->config->{page_cache}->{no_expire} = "never";
         }
+    } else {
+        die __PACKAGE__ . " requires a Catalyst::Plugin::Cache plugin.";
     }
-
-    return $c->NEXT::setup(@_);
 }
 
 =item _page_cache_key

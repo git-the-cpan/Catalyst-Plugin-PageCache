@@ -1,5 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.06    2005-06-07 23:40:00
+        - Die if no cache plugin is loaded. (chansen)
+        - Changed to isa() for cache backend detection. (chansen)
+
 0.05    2005-06-06 23:15:00
         - Fixed bug in clear_cached_page when cache index is not
           available.
@@ -11,13 +15,13 @@ Revision history for Perl extension Catalyst::Plugin::PageCache
         - Removed unnecessary prepare_request method.
 
 0.03    2005-06-04 22:30:00
-        - Switched to Class::Accessor::Fast.
-        - Preserve Last-Modified time of the cached data.
+        - Switched to Class::Accessor::Fast. (chansen)
+        - Preserve Last-Modified time of the cached data. (chansen)
 
 0.02    2005-06-04 18:13:00
-        - Preserve Content-Type and Content-Encoding of cached data.
+        - Preserve Content-Type and Content-Encoding of cached data. (chansen)
         - Send 304 Not Modified header when a browser or proxy requests
-          If-Modified-Since and the data is still cached.
+          If-Modified-Since and the data is still cached. (chansen)
         - Don't check the auto list if the page will already be cached.
 
 0.01    2005-06-04 12:00:00

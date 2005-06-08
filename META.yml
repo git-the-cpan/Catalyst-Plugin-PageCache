@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name: Catalyst-Plugin-PageCache
-version: 0.05
+version: 0.06
 author:
   - Andy Grundman, C<andy@hybridized.org>
 abstract: Cache the output of entire pages
