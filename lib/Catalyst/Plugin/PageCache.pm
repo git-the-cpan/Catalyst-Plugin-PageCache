@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -276,6 +276,7 @@ sub setup {
     
     $c->NEXT::setup(@_);
     
+    $c->config->{page_cache}->{auto_cache} ||= [];
     $c->config->{page_cache}->{expires} ||= 60 * 5;
     $c->config->{page_cache}->{set_http_headers} ||= 0;
     $c->config->{page_cache}->{debug} ||= 0;
