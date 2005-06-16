@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use NEXT;
 use HTTP::Date;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -279,17 +279,18 @@ sub setup {
     $c->config->{page_cache}->{auto_cache} ||= [];
     $c->config->{page_cache}->{expires} ||= 60 * 5;
     $c->config->{page_cache}->{set_http_headers} ||= 0;
-    $c->config->{page_cache}->{debug} ||= 0;
+    $c->config->{page_cache}->{debug} ||= $c->debug;
     
     # detect the cache plugin being used and set appropriate 
     # never-expires syntax
     if ( $c->can('cache') ) {
-        if ( $c->cache->isa('Cache::FileCache') || 
-             $c->cache->isa('Cache::Memcached') ) {
-                 $c->config->{page_cache}->{no_expire} = "never";
-        } elsif ( $c->cache->isa('Cache::FastMmap') ) {
-            # In FastMmap, it's not possible to set an expiration
-            $c->config->{page_cache}->{no_expire} = undef;
+        if ( $c->cache->isa('Cache::FileCache') ) {
+            $c->config->{page_cache}->{no_expire} = "never";
+        } elsif ( $c->cache->isa('Cache::Memcached') ||
+                  $c->cache->isa('Cache::FastMmap') ) {
+          # Memcached defaults to 'never' when not given an expiration
+          # In FastMmap, it's not possible to set an expiration
+          $c->config->{page_cache}->{no_expire} = undef;
         }
     } else {
         die __PACKAGE__ . " requires a Catalyst::Plugin::Cache plugin.";
