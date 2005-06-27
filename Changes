@@ -1,5 +1,11 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.09    2005-06-27 11:25:00
+        - Removed dependence on HTTP::Date.
+        - Make sure the same cache key checked during the dispatch phase
+          is used during the finalize phase.  This avoids problems if the
+          user adds or deletes request parameters.
+
 0.08    2005-06-16 00:20:00
         - Debug is now enabled by default if in Catalyst -Debug mode.
         - Expires now properly defaults to undef for Cache::Memcached backend.

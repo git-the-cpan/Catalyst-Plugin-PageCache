@@ -3,15 +3,18 @@ package Catalyst::Plugin::PageCache;
 use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
-use HTTP::Date;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
 
 # Keeps track of whether the current request was served from cache
 __PACKAGE__->mk_accessors('_page_cache_used');
+
+# Keeps a safe copy of the initial request parameters, in case the
+# user changes them during processing
+__PACKAGE__->mk_accessors('_page_cache_key');
 
 =head1 NAME
 
@@ -167,7 +170,7 @@ sub dispatch {
     return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
     
     # check the page cache for a cached copy of this page
-    my $key = $c->_page_cache_key;
+    my $key = $c->_get_page_cache_key;
     if ( my $data = $c->cache->get( $key ) ) {
         # do we need to expire this data?
         if ( $data->{expire_time} <= time ) {
@@ -240,7 +243,7 @@ sub finalize {
     }
     
     if ( $c->_cache_page ) {
-        my $key = $c->_page_cache_key;
+        my $key = $c->_get_page_cache_key;
         $c->log->debug( "Caching page $key for " . $c->_cache_page . " seconds" )
             if ( $c->config->{page_cache}->{debug} );
         
@@ -297,23 +300,21 @@ sub setup {
     }
 }
 
-=item _page_cache_key
-
-Returns a cache key for the current page.
-
-=cut
-
-sub _page_cache_key {
+sub _get_page_cache_key {
     my $c = shift;
     
+    # We can't rely on the params after the user's code has run, so
+    # use the key created during the initial dispatch phase
+    return $c->_page_cache_key if ( $c->_page_cache_key );
+    
     my $key = "/" . $c->req->path;
-    if ( scalar keys %{ $c->req->params } ) {
-        my @params = ();
-        foreach my $k ( sort keys %{ $c->req->params } ) {
-            push @params, $k . "=" . $c->req->params->{$k};
-        }
+    if ( scalar $c->req->param ) {
+        my @params = map { "$_=" . $c->req->params->{$_} } sort $c->req->param;
         $key .= "?" . join "&", @params;
     }
+    
+    $c->_page_cache_key( $key );
+    
     return $key;
 }
 
