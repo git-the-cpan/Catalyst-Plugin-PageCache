@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');

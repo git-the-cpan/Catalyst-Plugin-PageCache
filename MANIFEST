@@ -8,3 +8,10 @@ README
 t/01use.t
 t/02pod.t
 t/03podcoverage.t
+t/04cache.t
+t/05expires.t
+t/06auto_cache.t
+t/07set_http_headers.t
+t/08params.t
+t/lib/TestApp.pm
+t/lib/TestApp/C/Cache.pm
