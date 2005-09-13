@@ -1,5 +1,14 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.10    2005-09-13 14:00:00
+        - Fixed bug in cache key generation that ignored duplicate key names.
+        - Fixed bug where clear_cached_page called with a regex did not
+          properly remove the page from cache.
+        - Fixed bug where cache metadata was not set properly if
+          content-type or content-encoding was missing.
+        - Added test suite.
+        - Code cleanup per Best Practices.
+
 0.09    2005-06-27 11:25:00
         - Removed dependence on HTTP::Date.
         - Make sure the same cache key checked during the dispatch phase

@@ -2,7 +2,8 @@ NAME
     Catalyst::Plugin::PageCache - Cache the output of entire pages
 
 SYNOPSIS
-        use Catalyst 'PageCache';
+        use Catalyst;
+        MyApp->setup( qw/Cache::FileCache PageCache/ );
     
         MyApp->config->{page_cache} = {
             expires => 300,
@@ -14,6 +15,7 @@ SYNOPSIS
             debug => 1,
         };
 
+        # in a controller method
         $c->cache_page( '3600' );
     
         $c->clear_cached_page( '/list' );
@@ -76,41 +78,28 @@ CONFIGURATION
     This will print additional debugging information to the Catalyst log.
     You will need to have -Debug enabled to see these messages.
 
-  METHODS
-    cache_page
-        Call cache_page in any controller method you wish to be cached.
+METHODS
+  cache_page
+    Call cache_page in any controller method you wish to be cached.
 
-            $c->cache_page( $expire );
+        $c->cache_page( $expire );
 
-        The page will be cached for $expire seconds. Every user who visits
-        the URI(s) referenced by that controller will receive the page
-        directly from cache. Your controller will not be processed again
-        until the cache expires. You can set this value to as low as 60
-        seconds if you have heavy traffic to greatly improve site
-        performance.
+    The page will be cached for $expire seconds. Every user who visits the
+    URI(s) referenced by that controller will receive the page directly from
+    cache. Your controller will not be processed again until the cache
+    expires. You can set this value to as low as 60 seconds if you have
+    heavy traffic to greatly improve site performance.
 
-    clear_cached_page
-        To clear the cached value for a URI, you may call clear_cached_page.
+  clear_cached_page
+    To clear the cached value for a URI, you may call clear_cached_page.
 
-            $c->clear_cached_page( '/view/userlist' );
-            $c->clear_cached_page( '/view/.*' );
+        $c->clear_cached_page( '/view/userlist' );
+        $c->clear_cached_page( '/view/.*' );
     
-        This method takes an absolute path or regular expression. For
-        obvious reasons, this must be called from a different controller
-        than the cached controller. You may for example wish to build an
-        admin page that lets you clear page caches.
-
-    dispatch (extended)
-        Bypass the dispatch phase and send cached content if available
-
-    finalize (extended)
-        Cache the page output if requested.
-
-    setup
-        Setup default values.
-
-    _page_cache_key
-        Returns a cache key for the current page.
+    This method takes an absolute path or regular expression. For obvious
+    reasons, this must be called from a different controller than the cached
+    controller. You may for example wish to build an admin page that lets
+    you clear page caches.
 
 KNOWN ISSUES
     It is not currently possible to cache pages served from the Static

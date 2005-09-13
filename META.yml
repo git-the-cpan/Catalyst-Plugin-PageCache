@@ -1,8 +1,8 @@
 ---
 name: Catalyst-Plugin-PageCache
-version: 0.09
+version: 0.10
 author:
-  - 'Andy Grundman, C<andy@hybridized.org>'
+  - 'Andy Grundman, <andy@hybridized.org>'
 abstract: Cache the output of entire pages
 license: perl
 requires:
@@ -10,5 +10,5 @@ requires:
 provides:
   Catalyst::Plugin::PageCache:
     file: lib/Catalyst/Plugin/PageCache.pm
-    version: 0.09
-generated_by: Module::Build version 0.25
+    version: 0.10
+generated_by: Module::Build version 0.2611

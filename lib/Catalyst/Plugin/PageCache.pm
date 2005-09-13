@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -16,13 +16,212 @@ __PACKAGE__->mk_accessors('_page_cache_used');
 # user changes them during processing
 __PACKAGE__->mk_accessors('_page_cache_key');
 
+sub cache_page {
+    my ( $c, $expires ) = @_;
+    
+    $expires ||= $c->config->{page_cache}->{expires};
+    
+    # mark the page for caching during finalize
+    if ( $expires > 0 ) {
+        $c->_cache_page( $expires );
+    }
+}
+
+sub clear_cached_page {
+    my ( $c, $uri ) = @_;
+    
+    return unless ( $c->can( 'cache' ) );
+    
+    my $removed = 0;
+    
+    my $index = $c->cache->get( "_page_cache_index" ) || {};
+    foreach my $key ( keys %{$index} ) {
+        if ( $key =~ /^$uri$/xms ) {
+            $c->cache->remove( $key );
+            delete $index->{$key};
+            $removed++;
+            $c->log->debug( "Removed $key from page cache" )
+                if ( $c->config->{page_cache}->{debug} );
+        }
+    }
+    $c->cache->set( "_page_cache_index", $index, 
+        $c->config->{page_cache}->{no_expire} ) if ( $removed );
+}
+
+sub dispatch {
+    my $c = shift;
+    
+    # never serve POST request pages from cache
+    return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
+    
+    # check the page cache for a cached copy of this page
+    my $key = $c->_get_page_cache_key;
+    if ( my $data = $c->cache->get( $key ) ) {
+        # do we need to expire this data?
+        if ( $data->{expire_time} <= time ) {
+            $c->log->debug( "Expiring $key from page cache" )
+                if ( $c->config->{page_cache}->{debug} );
+            $c->cache->remove( $key );
+            
+            my $index = $c->cache->get( "_page_cache_index" ) || {};
+            delete $index->{$key};
+            $c->cache->set( "_page_cache_index", $index, 
+                $c->config->{page_cache}->{no_expire} );
+            
+            return $c->NEXT::dispatch(@_);
+        }
+        
+        $c->log->debug( "Serving $key from page cache, expires in " . 
+            ( $data->{expire_time} - time ) . " seconds" )
+            if ( $c->config->{page_cache}->{debug} );
+            
+        $c->_page_cache_used( 1 );
+        
+        if ( $c->req->headers->if_modified_since ) {
+            if ( $c->req->headers->if_modified_since == $data->{create_time} ) {
+                $c->res->status(304); # Not Modified
+                $c->res->headers->remove_content_headers;
+                return 1;
+            }
+        }
+        
+        $c->res->body( $data->{body} );
+        if ( $data->{content_type} ) {
+            $c->res->content_type( $data->{content_type} );
+        }
+        if ( $data->{content_encoding} ) {
+            $c->res->content_encoding( $data->{content_encoding} );
+        }
+        
+        if ( $c->config->{page_cache}->{set_http_headers} ) {
+            $c->res->headers->header( 'Cache-Control' =>
+                "max-age=" . ( $data->{expire_time} - time ) );
+            $c->res->headers->expires( $data->{expire_time} );
+            $c->res->headers->last_modified( $data->{create_time} );
+        }
+    }
+    else {
+        return $c->NEXT::dispatch(@_);
+    }
+}
+
+sub finalize {
+    my $c = shift;
+    
+    # never cache POST requests
+    return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
+    
+    # if we already served the current request from cache, we can skip the 
+    # rest of this method
+    return $c->NEXT::finalize(@_) if ( $c->_page_cache_used );
+    
+    if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {  
+        # is this page part of the auto_cache list?
+        my $path = "/" . $c->req->path;
+        AUTO_CACHE:
+        foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
+            if ( $path =~ /^$auto$/ ) {
+                $c->log->debug( "Auto-caching page $path" )
+                    if ( $c->config->{page_cache}->{debug} );
+                $c->cache_page;
+                last AUTO_CACHE;
+            }
+        }
+    }    
+    
+    if ( $c->_cache_page ) {
+        my $key = $c->_get_page_cache_key;
+        $c->log->debug( "Caching page $key for " . $c->_cache_page . " seconds" )
+            if ( $c->config->{page_cache}->{debug} );
+        
+        # Cache some additional metadata along with the content
+        # Some caches don't support expirations, so we do it manually
+        my $data = {
+            body => $c->res->body || undef,
+            content_type => $c->res->content_type || undef,
+            content_encoding => $c->res->content_encoding || undef,
+            create_time => $c->res->headers->last_modified || time,
+            expire_time => time + $c->_cache_page,
+        };
+        $c->cache->set( $key, $data );
+        
+        # Keep an index cache of all pages that have been cached, for use
+        # with clear_cached_page
+        my $index = $c->cache->get( "_page_cache_index" ) || {};
+        $index->{$key} = 1;
+        $c->cache->set( "_page_cache_index", $index, 
+            $c->config->{page_cache}->{no_expire} );
+    }
+            
+    return $c->NEXT::finalize(@_);
+}
+
+sub setup {
+    my $c = shift;
+    
+    $c->NEXT::setup(@_);
+    
+    $c->config->{page_cache}->{auto_cache} ||= [];
+    $c->config->{page_cache}->{expires} ||= 60 * 5;
+    $c->config->{page_cache}->{set_http_headers} ||= 0;
+    $c->config->{page_cache}->{debug} ||= $c->debug;
+    
+    # detect the cache plugin being used and set appropriate 
+    # never-expires syntax
+    if ( $c->can('cache') ) {
+        if ( $c->cache->isa('Cache::FileCache') ) {
+            $c->config->{page_cache}->{no_expire} = "never";
+        }
+        elsif ( $c->cache->isa('Cache::Memcached') ||
+                  $c->cache->isa('Cache::FastMmap') ) {
+          # Memcached defaults to 'never' when not given an expiration
+          # In FastMmap, it's not possible to set an expiration
+          $c->config->{page_cache}->{no_expire} = undef;
+        }
+    }
+    else {
+        die __PACKAGE__ . " requires a Catalyst::Plugin::Cache plugin.";
+    }
+}
+
+sub _get_page_cache_key {
+    my $c = shift;
+    
+    # We can't rely on the params after the user's code has run, so
+    # use the key created during the initial dispatch phase
+    return $c->_page_cache_key if ( $c->_page_cache_key );
+    
+    my $key = "/" . $c->req->path;
+    if ( scalar $c->req->param ) {
+        my @params;
+        foreach my $arg ( sort keys %{ $c->req->params } ) {
+            if ( ref $c->req->params->{$arg} ) {
+                my $list = $c->req->params->{$arg};
+                push @params, map { "$arg=" . $_  } sort @{$list};
+            }
+            else {
+                push @params, "$arg=" . $c->req->params->{$arg};
+            }
+        }
+        $key .= '?' . join( '&', @params );
+    }
+    
+    $c->_page_cache_key( $key );
+    
+    return $key;
+}
+
+1;
+__END__
+
 =head1 NAME
 
 Catalyst::Plugin::PageCache - Cache the output of entire pages
 
 =head1 SYNOPSIS
 
-    use Catalyst 'PageCache';
+    use Catalyst;
+    MyApp->setup( qw/Cache::FileCache PageCache/ );
     
     MyApp->config->{page_cache} = {
         expires => 300,
@@ -34,6 +233,7 @@ Catalyst::Plugin::PageCache - Cache the output of entire pages
         debug => 1,
     };
 
+    # in a controller method
     $c->cache_page( '3600' );
     
     $c->clear_cached_page( '/list' );
@@ -96,11 +296,9 @@ as absolute: '/list' or as a regex: '/view/.*'
 This will print additional debugging information to the Catalyst log.  You will need to
 have -Debug enabled to see these messages.
 
-=head2 METHODS
+=head1 METHODS
 
-=over 4
-
-=item cache_page
+=head2 cache_page
 
 Call cache_page in any controller method you wish to be cached.
 
@@ -112,18 +310,7 @@ controller will not be processed again until the cache expires.  You can set thi
 value to as low as 60 seconds if you have heavy traffic to greatly improve site
 performance.
 
-=cut
-
-sub cache_page {
-    my ( $c, $expires ) = @_;
-    
-    $expires ||= $c->config->{page_cache}->{expires};
-    
-    # mark the page for caching during finalize
-    $c->_cache_page( $expires ) if ( $expires > 0 );
-}
-
-=item clear_cached_page
+=head2 clear_cached_page
 
 To clear the cached value for a URI, you may call clear_cached_page.
 
@@ -133,192 +320,6 @@ To clear the cached value for a URI, you may call clear_cached_page.
 This method takes an absolute path or regular expression.  For obvious reasons, this
 must be called from a different controller than the cached controller. You may for
 example wish to build an admin page that lets you clear page caches.
-
-=cut
-
-sub clear_cached_page {
-    my ( $c, $uri ) = @_;
-    
-    return unless ( $c->can( 'cache' ) );
-    
-    my $removed = 0;
-    
-    my $index = $c->cache->get( "_page_cache_index" ) || {};
-    foreach my $key ( keys %{$index} ) {
-        if ( $key =~ /^$uri$/ ) {
-            $c->cache->remove( $uri );
-            delete $index->{$key};
-            $removed++;
-            $c->log->debug( "Removed $key from page cache" )
-                if ( $c->config->{page_cache}->{debug} );
-        }
-    }
-    $c->cache->set( "_page_cache_index", $index, 
-        $c->config->{page_cache}->{no_expire} ) if ( $removed );
-}
-
-=item dispatch (extended)
-
-Bypass the dispatch phase and send cached content if available
-
-=cut
-
-sub dispatch {
-    my $c = shift;
-    
-    # never serve POST request pages from cache
-    return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
-    
-    # check the page cache for a cached copy of this page
-    my $key = $c->_get_page_cache_key;
-    if ( my $data = $c->cache->get( $key ) ) {
-        # do we need to expire this data?
-        if ( $data->{expire_time} <= time ) {
-            $c->log->debug( "Expiring $key from page cache" )
-                if ( $c->config->{page_cache}->{debug} );
-            $c->cache->remove( $key );
-            
-            my $index = $c->cache->get( "_page_cache_index" ) || {};
-            delete $index->{$key};
-            $c->cache->set( "_page_cache_index", $index, 
-                $c->config->{page_cache}->{no_expire} );
-            
-            return $c->NEXT::dispatch(@_);
-        }
-        
-        $c->log->debug( "Serving $key from page cache, expires in " . 
-            ( $data->{expire_time} - time ) . " seconds" )
-            if ( $c->config->{page_cache}->{debug} );
-            
-        $c->_page_cache_used( 1 );
-        
-        if ( $c->req->headers->if_modified_since ) {
-            if ( $c->req->headers->if_modified_since == $data->{create_time} ) {
-                $c->res->status(304); # Not Modified
-                $c->res->headers->remove_content_headers;
-                return 1;
-            }
-        }
-        
-        $c->res->body( $data->{body} );
-        $c->res->content_type( $data->{content_type} ) if ( $data->{content_type} );
-        $c->res->content_encoding( $data->{content_encoding} ) if ( $data->{content_encoding} );
-        
-        if ( $c->config->{page_cache}->{set_http_headers} ) {
-            $c->res->headers->header( 'Cache-Control', "max-age=" . ( $data->{expire_time} - time ) );
-            $c->res->headers->expires( $data->{expire_time} );
-            $c->res->headers->last_modified( $data->{create_time} );
-        }
-    } else {
-        return $c->NEXT::dispatch(@_);
-    }
-}
-
-=item finalize (extended)
-
-Cache the page output if requested.
-
-=cut
-
-sub finalize {
-    my $c = shift;
-    
-    # never cache POST requests
-    return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
-    
-    # if we already served the current request from cache, we can skip the rest of this method
-    return $c->NEXT::finalize(@_) if ( $c->_page_cache_used );
-    
-    # is this page part of the auto_cache list?
-    if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
-        my $path = "/" . $c->req->path;
-        foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
-            if ( $path =~ /^$auto$/ ) {
-                $c->log->debug( "Auto-caching page $path" )
-                    if ( $c->config->{page_cache}->{debug} );
-                $c->cache_page;
-                last;
-            }
-        }
-    }
-    
-    if ( $c->_cache_page ) {
-        my $key = $c->_get_page_cache_key;
-        $c->log->debug( "Caching page $key for " . $c->_cache_page . " seconds" )
-            if ( $c->config->{page_cache}->{debug} );
-        
-        # Cache some additional metadata along with the content
-        # Some caches don't support expirations, so we do it manually
-        my $data = {
-            body => $c->res->body,
-            content_type => $c->res->content_type,
-            content_encoding => $c->res->content_encoding,
-            create_time => $c->res->headers->last_modified || time,
-            expire_time => time + $c->_cache_page,
-        };
-        $c->cache->set( $key, $data );
-        
-        # Keep an index cache of all pages that have been cached, for use with clear_cached_page
-        my $index = $c->cache->get( "_page_cache_index" ) || {};
-        $index->{$key} = 1;
-        $c->cache->set( "_page_cache_index", $index, 
-            $c->config->{page_cache}->{no_expire} );
-    }
-            
-    return $c->NEXT::finalize(@_);
-}
-
-=item setup
-
-Setup default values.
-
-=cut
-
-sub setup {
-    my $c = shift;
-    
-    $c->NEXT::setup(@_);
-    
-    $c->config->{page_cache}->{auto_cache} ||= [];
-    $c->config->{page_cache}->{expires} ||= 60 * 5;
-    $c->config->{page_cache}->{set_http_headers} ||= 0;
-    $c->config->{page_cache}->{debug} ||= $c->debug;
-    
-    # detect the cache plugin being used and set appropriate 
-    # never-expires syntax
-    if ( $c->can('cache') ) {
-        if ( $c->cache->isa('Cache::FileCache') ) {
-            $c->config->{page_cache}->{no_expire} = "never";
-        } elsif ( $c->cache->isa('Cache::Memcached') ||
-                  $c->cache->isa('Cache::FastMmap') ) {
-          # Memcached defaults to 'never' when not given an expiration
-          # In FastMmap, it's not possible to set an expiration
-          $c->config->{page_cache}->{no_expire} = undef;
-        }
-    } else {
-        die __PACKAGE__ . " requires a Catalyst::Plugin::Cache plugin.";
-    }
-}
-
-sub _get_page_cache_key {
-    my $c = shift;
-    
-    # We can't rely on the params after the user's code has run, so
-    # use the key created during the initial dispatch phase
-    return $c->_page_cache_key if ( $c->_page_cache_key );
-    
-    my $key = "/" . $c->req->path;
-    if ( scalar $c->req->param ) {
-        my @params = map { "$_=" . $c->req->params->{$_} } sort $c->req->param;
-        $key .= "?" . join "&", @params;
-    }
-    
-    $c->_page_cache_key( $key );
-    
-    return $key;
-}
-
-=back
 
 =head1 KNOWN ISSUES
 
@@ -339,7 +340,7 @@ L<Catalyst::Plugin::Cache::Memcached>
 
 =head1 AUTHOR
 
-Andy Grundman, C<andy@hybridized.org>
+Andy Grundman, <andy@hybridized.org>
 
 =head1 COPYRIGHT
 
@@ -347,5 +348,3 @@ This program is free software, you can redistribute it and/or modify it under
 the same terms as Perl itself.
 
 =cut
-
-1;
