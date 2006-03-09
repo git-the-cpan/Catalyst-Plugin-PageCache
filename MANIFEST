@@ -13,5 +13,8 @@ t/05expires.t
 t/06auto_cache.t
 t/07set_http_headers.t
 t/08params.t
+t/09datetime.t
+t/10options.t
+t/11nocache.t
 t/lib/TestApp.pm
 t/lib/TestApp/C/Cache.pm

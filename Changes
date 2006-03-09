@@ -1,5 +1,18 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.12    2006-03-09 16:30:00
+        - Fixed race condition in HTTP header test.
+        - Fixed Content-type to retain charset (moseley)
+        - Send cache headers on all requests (was not sending on first request) (moseley)
+        - Added ability to pass in a DateTime object to expire at a specific
+          time (moseley)
+        - Added ability to pass in an options list to set the cache expires
+          time separately from the expires time sent to client. (moseley)
+        - Test If-Modified-Since headers on request that loads the page cache.
+          Was only testing when returning a page already in the page cache. (moseley)
+        - Now sends Expires and Cache-Control headers on 304 to reset client cache. (moseley)
+        - Allow setting a zero expires to allow just page caching. (moseley)
+
 0.11    2005-09-13 14:50:00
         - Fixed MANIFEST.
 

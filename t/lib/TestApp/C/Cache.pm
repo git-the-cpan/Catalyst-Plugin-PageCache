@@ -47,4 +47,40 @@ sub clear_cache_regex : Local {
     $c->res->output( 'ok' );
 }
 
+sub test_datetime : Local {
+    my ( $self, $c ) = @_;
+
+    require DateTime;
+
+    my $dt = DateTime->new( day => 24, month => 1, year => 2026, time_zone => 'UTC' );
+
+    $c->cache_page( $dt );
+
+    $c->res->output( $c->config->{counter} );
+}
+
+sub extra_options : Local {
+    my ( $self, $c ) = @_;
+
+    $c->cache_page(
+        last_modified   => time,
+        expires         => 60,
+        cache_seconds   => 20,
+    );
+
+    $c->res->output( $c->config->{counter} );
+}
+
+sub no_cache : Local {
+    my ( $self, $c ) = @_;
+
+    $c->cache_page(
+        last_modified   => time,
+        expires         => 0,
+        cache_seconds   => 20,
+    );
+
+    $c->res->output( $c->config->{counter} );
+}
+
 1;

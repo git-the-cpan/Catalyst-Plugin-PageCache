@@ -10,10 +10,19 @@ use File::Path;
 
 BEGIN {
     eval "use Catalyst::Plugin::Cache::FileCache";
-    plan $@
-        ? ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' )
-        : ( tests => 7 );
+    if ( $@ ) {
+        plan ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' );
+    } else {
+        eval "use DateTime";
+        if ( $@ ) {
+            plan ( skip_all => 'needs DateTime for testing' );
+        } else {
+            plan ( tests => 7 );
+        }
+    }
 }
+
+# This tests that a DateTime object can be passed in.
 
 # remove previous cache
 rmtree 't/var' if -d 't/var';
@@ -25,17 +34,21 @@ TestApp->config->{page_cache}->{set_http_headers} = 1;
 
 # cache a page
 my $cache_time = time;
-ok( my $res = request('http://localhost/cache/count'), 'request ok' );
+ok( my $res = request('http://localhost/cache/test_datetime'), 'request ok' );
 is( $res->content, 1, 'count is 1' );
 
 # page will be served from cache and have http headers
-ok( $res = request('http://localhost/cache/count'), 'request ok' );
+ok( $res = request('http://localhost/cache/test_datetime'), 'request ok' );
 is( $res->content, 1, 'count is still 1 from cache' );
 
 # avoid race conditions by not testing for exact times
 like( $res->headers->{'cache-control'}, qr/max-age=\d{3}/, 'cache-control header ok' );
 cmp_ok( $res->headers->last_modified, '>=', $cache_time, 'last-modified header matches correct time' );
-cmp_ok( $res->headers->expires, '>=', $cache_time + 300, 'expires header matches correct time' );
+
+require DateTime;
+
+my $dt_epoch = DateTime->new( day => 24, month => 1, year => 2026, time_zone => 'UTC' )->epoch;
+is( $res->headers->expires, $dt_epoch, 'expires header matches correct time' );
 
 
 

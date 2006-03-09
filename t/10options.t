@@ -15,6 +15,8 @@ BEGIN {
         : ( tests => 7 );
 }
 
+# This test that options can be passed to cache.
+
 # remove previous cache
 rmtree 't/var' if -d 't/var';
 
@@ -25,17 +27,16 @@ TestApp->config->{page_cache}->{set_http_headers} = 1;
 
 # cache a page
 my $cache_time = time;
-ok( my $res = request('http://localhost/cache/count'), 'request ok' );
+ok( my $res = request('http://localhost/cache/extra_options'), 'request ok' );
 is( $res->content, 1, 'count is 1' );
 
 # page will be served from cache and have http headers
-ok( $res = request('http://localhost/cache/count'), 'request ok' );
+ok( $res = request('http://localhost/cache/extra_options'), 'request ok' );
 is( $res->content, 1, 'count is still 1 from cache' );
 
-# avoid race conditions by not testing for exact times
-like( $res->headers->{'cache-control'}, qr/max-age=\d{3}/, 'cache-control header ok' );
+like( $res->headers->{'cache-control'}, qr/max-age=60/, 'cache-control header ok' );
 cmp_ok( $res->headers->last_modified, '>=', $cache_time, 'last-modified header matches correct time' );
-cmp_ok( $res->headers->expires, '>=', $cache_time + 300, 'expires header matches correct time' );
+cmp_ok( $res->headers->expires, '>=', $cache_time + 60, 'expires header matches correct time' );
 
 
 
