@@ -1,5 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.13    2006-08-12 14:43:00
+	- Add optional support to check Authentication plugin if user 
+          is logged in.
+
 0.12    2006-03-09 16:30:00
         - Fixed race condition in HTTP header test.
         - Fixed Content-type to retain charset (moseley)

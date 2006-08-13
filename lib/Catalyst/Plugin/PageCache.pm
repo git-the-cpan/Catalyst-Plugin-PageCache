@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -74,17 +74,21 @@ sub dispatch {
     # never serve POST request pages from cache
     return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
 
+    return $c->NEXT::dispatch(@_) if ( 
+	$c->config->{page_cache}->{auto_check_user} && 
+	$c->can('user_exists') && 
+        $c->user_exists );
+
     # check the page cache for a cached copy of this page
-    my $key = $c->_get_page_cache_key;
+    return $c->NEXT::dispatch(@_)
+        unless my $key = $c->_get_page_cache_key;
 
     return $c->NEXT::dispatch(@_)
         unless my $data = $c->cache->get( $key );
 
-
-
     # Time to remove page from cache?
 
-    if ( $data->{expire_time} <= time ) {
+    if ( $data->{expire_time} and $data->{expire_time} <= time ) {
         $c->log->debug( "Expiring $key from page cache" )
             if ( $c->config->{page_cache}->{debug} );
 
@@ -189,6 +193,10 @@ sub finalize {
 
     # never cache POST requests
     return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
+    return $c->NEXT::finalize(@_) if ( 
+	$c->config->{page_cache}->{auto_check_user} && 
+	$c->can('user_exists') && 
+        $c->user_exists );
 
     # if we already served the current request from cache, we can skip the
     # rest of this method
@@ -403,6 +411,8 @@ as absolute: '/list' or as a regex: '/view/.*'
 
 This will print additional debugging information to the Catalyst log.  You will need to
 have -Debug enabled to see these messages.
+You can also specify an optional config parameter auto_check_user. If this
+option is enabled, automatic caching is disabled for logged in users.
 
 =head1 METHODS
 
