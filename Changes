@@ -1,7 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
-0.13    2006-10-19 22:15:00
+0.14    2006-10-19 22:15:00
         - Support newer C::P::Cache modules.
+
+0.13    2006-08-12 14:43:00
         - Add optional support to check Authentication plugin if user is
           logged in. (marcus)
 
