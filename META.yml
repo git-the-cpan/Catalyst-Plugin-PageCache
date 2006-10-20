@@ -1,19 +1,8 @@
----
+--- #YAML:1.0
 name: Catalyst-Plugin-PageCache
 version: 0.13
 author:
-  - 'Andy Grundman, <andy@hybridized.org>'
+  - Andy Grundman, <andy@hybridized.org>
 abstract: Cache the output of entire pages
 license: perl
-resources:
-  license: http://dev.perl.org/licenses/
-requires:
-  Catalyst::Runtime: 0
-provides:
-  Catalyst::Plugin::PageCache:
-    file: lib/Catalyst/Plugin/PageCache.pm
-    version: 0.13
-generated_by: Module::Build version 0.2805
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.2.html
-  version: 1.2
+generated_by: Module::Build version 0.2612, without YAML.pm

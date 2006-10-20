@@ -272,6 +272,13 @@ sub setup {
     # detect the cache plugin being used and set appropriate
     # never-expires syntax
     if ( $c->can('cache') ) {
+	
+        # Newer C::P::Cache, cannot call $c->cache as a package method
+        if ( $c->isa('Catalyst::Plugin::Cache') ) {
+        	return;
+        }
+		
+		# Older Cache plugins
         if ( $c->cache->isa('Cache::FileCache') ) {
             $c->config->{page_cache}->{no_expire} = "never";
         }
