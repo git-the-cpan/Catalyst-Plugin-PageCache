@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -187,7 +187,6 @@ sub _set_page_cache_headers {
         unless $c->res->status && $c->res->status == 304;
 }
 
-
 sub finalize {
     my $c = shift;
 
@@ -197,6 +196,7 @@ sub finalize {
 	$c->config->{page_cache}->{auto_check_user} && 
 	$c->can('user_exists') && 
         $c->user_exists );
+    return $c->NEXT::finalize(@_) if ( scalar @{ $c->error } );
 
     # if we already served the current request from cache, we can skip the
     # rest of this method
@@ -205,8 +205,10 @@ sub finalize {
     if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
         # is this page part of the auto_cache list?
         my $path = "/" . $c->req->path;
+		# For performance, this should be moved to setup, and generate a hash.
         AUTO_CACHE:
         foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
+			next if $auto =~ m/^\d$/;
             if ( $path =~ /^$auto$/ ) {
                 $c->log->debug( "Auto-caching page $path" )
                     if ( $c->config->{page_cache}->{debug} );
@@ -275,7 +277,7 @@ sub setup {
 	
         # Newer C::P::Cache, cannot call $c->cache as a package method
         if ( $c->isa('Catalyst::Plugin::Cache') ) {
-        	return;
+            return;
         }
 		
 		# Older Cache plugins
