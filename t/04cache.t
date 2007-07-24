@@ -12,7 +12,7 @@ BEGIN {
     eval "use Catalyst::Plugin::Cache::FileCache";
     plan $@
         ? ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' )
-        : ( tests => 18 );
+        : ( tests => 20 );
 }
 
 # remove previous cache
@@ -60,3 +60,7 @@ sleep 3;
 # cache should have expired
 ok( $res = request('http://localhost/cache/count/2'), 'request ok' );
 is( $res->content, 7, 'count after cache expired is 7' );
+
+# test cache of a page with a parameter-less query string
+ok( $res = request('http://localhost/cache/count/2?foo'), 'request ok' );
+is( $res->content, 8, 'count after query string is 8' );

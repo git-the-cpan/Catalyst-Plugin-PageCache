@@ -1,5 +1,10 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.16    2007-07-24 10:30:00
+        - Fixed a bug where pages with query strings but no params
+          did not have the cache key created properly.
+        - Switched to Module::Install.
+
 0.15    2006-12-31 20:04:03
         - Don't cache pages with errors.
 

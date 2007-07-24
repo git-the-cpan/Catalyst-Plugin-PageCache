@@ -4,7 +4,7 @@ NAME
 SYNOPSIS
         use Catalyst;
         MyApp->setup( qw/Cache::FileCache PageCache/ );
-    
+
         MyApp->config->{page_cache} = {
             expires => 300,
             set_http_headers => 1,
@@ -17,8 +17,18 @@ SYNOPSIS
 
         # in a controller method
         $c->cache_page( '3600' );
-    
+
         $c->clear_cached_page( '/list' );
+
+        # Expire at a specific time
+        $c->cache_page( $datetime_object );
+
+        # Fine control
+        $c->cache_page(
+            last_modified   => $last_modified,
+            cache_seconds   => 24 * 60 * 60,    # once a day
+            expires         => 300,             # allow client caching
+        );
 
 DESCRIPTION
     Many dynamic websites perform heavy processing on most pages, yet this
@@ -50,12 +60,12 @@ CONFIGURATION
     values:
 
         expires => $seconds
-    
+
     This will set the default expiration time for all page caches. If you do
     not specify this, expiration defaults to 300 seconds (5 minutes).
 
         set_http_headers => 1
-    
+
     Enabling this value will cause Catalyst to set the correct HTTP headers
     to allow browsers and proxy servers to cache your page. This will
     further reduce the load on your server. The headers are set in such a
@@ -66,7 +76,7 @@ CONFIGURATION
         auto_cache => [
             $uri,
         ]
-    
+
     To automatically cache certain pages, or all pages, you can specify
     auto-cache URIs as an array reference. Any controller within your
     application that matches one of the auto_cache URIs will be cached using
@@ -74,9 +84,11 @@ CONFIGURATION
     or as a regex: '/view/.*'
 
         debug => 1
-    
+
     This will print additional debugging information to the Catalyst log.
-    You will need to have -Debug enabled to see these messages.
+    You will need to have -Debug enabled to see these messages. You can also
+    specify an optional config parameter auto_check_user. If this option is
+    enabled, automatic caching is disabled for logged in users.
 
 METHODS
   cache_page
@@ -90,16 +102,109 @@ METHODS
     expires. You can set this value to as low as 60 seconds if you have
     heavy traffic to greatly improve site performance.
 
+    Pass in a DateTime object to make the cache expire at a given point in
+    time.
+
+        $two_hours = DateTime->now->add( hours => 2 );
+        $c->cache_page( $two_hours );
+
+    The page will be stored in the page cache until this time.
+
+    If set_http_headers is set then Expires and Cache-Control headers will
+    also be set to expire at the given date as well
+
+    Pass in a list or hash reference for finer control.
+
+        $c->cache_page(
+            last_modified   => $last_modified,
+            cache_seconds   => 24 * 60 * 60,
+            expires         => 30,
+        );
+
+    This allows separate control of the page cache and the header cache
+    values sent to the client.
+
+    Possible options are:
+
+    last_modified
+        Last modified time in epoch seconds. If not set will use either the
+        current Last-Modified header, or if not set, the current time.
+
+    cache_seconds
+        This is the number of seconds to keep the page in the page cache,
+        which may be different (normally longer) than the time that client
+        caches may store the page.
+
+    expires
+        This is the lenght of time in seconds that a client may cache the
+        page before revalidating (by asking the server if the document has
+        changed).
+
+        Unlike above, this is a fixed setting that each client will see.
+        Regardless of how much longer the page will be cached in the page
+        cache the client still sees the same expires time.
+
+        Setting zero (0) for expires will result in the page being cached,
+        but headers will be sent telling the client to not cache the page.
+        Allows caching expensive content to generate, but any changes will
+        be seen right away.
+
+    To make the cache expire at a given point in time, pass in a DateTime
+    object.
+
+        $two_hours = DateTime->now->add( hours => 2 );
+        $c->cache_page( $two_hours );
+
+    If set_http_headers is set then Expires and Cache-Control headers will
+    be set to expire at the given date.
+
+    Pass in a list or hash reference for finer control.
+
+        $c->cache_page(
+            last_modified   => $last_modified,
+            cache_seconds   => 24 * 60 * 60,
+            expires         => 30,
+        );
+
+    Possible options are:
+
+    last_modified
+        Last modified time in epoch seconds. If not set will use either the
+        current Last-Modified header or the current time.
+
+    cache_seconds
+        This is the number of seconds to keep the page in the page cache,
+        which may be different (normally longer) then the time that client
+        caches may use the page.
+
+    expires
+        This is the lenght of time in seconds that a client may cache the
+        page before revalidating (by asking the server if the document has
+        changed).
+
+        Unlike the "expires" setting above
+
   clear_cached_page
     To clear the cached value for a URI, you may call clear_cached_page.
 
         $c->clear_cached_page( '/view/userlist' );
         $c->clear_cached_page( '/view/.*' );
-    
+
     This method takes an absolute path or regular expression. For obvious
     reasons, this must be called from a different controller than the cached
     controller. You may for example wish to build an admin page that lets
     you clear page caches.
+
+INTERNAL EXTENDED METHODS
+  dispatch
+    "dispatch" decides whether or not to serve a particular request from the
+    cache.
+
+  finalize
+    "finalize" caches the result of the current request if needed.
+
+  setup
+    "setup" initializes all default values.
 
 KNOWN ISSUES
     It is not currently possible to cache pages served from the Static
@@ -118,7 +223,10 @@ SEE ALSO
     Catalyst::Plugin::Cache::FileCache, Catalyst::Plugin::Cache::Memcached
 
 AUTHOR
-    Andy Grundman, "andy@hybridized.org"
+    Andy Grundman, <andy@hybridized.org>
+
+THANKS
+    Bill Moseley, <mods@hank.org>, for many patches and tests.
 
 COPYRIGHT
     This program is free software, you can redistribute it and/or modify it

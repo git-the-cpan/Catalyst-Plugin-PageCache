@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -317,6 +317,9 @@ sub _get_page_cache_key {
         }
         $key .= '?' . join( '&', @params );
     }
+    elsif ( my $query = $c->req->uri->query ) {
+        $key .= '?' . $query;
+    }
 
     $c->_page_cache_key( $key );
 
@@ -542,6 +545,20 @@ To clear the cached value for a URI, you may call clear_cached_page.
 This method takes an absolute path or regular expression.  For obvious reasons, this
 must be called from a different controller than the cached controller. You may for
 example wish to build an admin page that lets you clear page caches.
+
+=head1 INTERNAL EXTENDED METHODS
+
+=head2 dispatch
+
+C<dispatch> decides whether or not to serve a particular request from the cache.
+
+=head2 finalize
+
+C<finalize> caches the result of the current request if needed.
+
+=head2 setup
+
+C<setup> initializes all default values.
 
 =head1 KNOWN ISSUES
 
