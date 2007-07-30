@@ -26,5 +26,10 @@ t/08params.t
 t/09datetime.t
 t/10options.t
 t/11nocache.t
+t/12i18n.t
 t/lib/TestApp.pm
 t/lib/TestApp/C/Cache.pm
+t/lib/TestAppI18N.pm
+t/lib/TestAppI18N/C/Cache.pm
+t/lib/TestAppI18N/I18N/en.pm
+t/lib/TestAppI18N/I18N/es.pm

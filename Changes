@@ -1,5 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.17    2007-07-29 22:00:00
+        - If using C::P::I18N, allow caching of different versions of a
+          single URI based on the page language. (Roberto Henríquez)
+
 0.16    2007-07-24 10:30:00
         - Fixed a bug where pages with query strings but no params
           did not have the cache key created properly.

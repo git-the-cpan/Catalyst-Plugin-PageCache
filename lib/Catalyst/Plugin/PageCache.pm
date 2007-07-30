@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -56,7 +56,7 @@ sub clear_cached_page {
     my $index = $c->cache->get( "_page_cache_index" ) || {};
 
     foreach my $key ( keys %{$index} ) {
-        if ( $key =~ /^$uri$/xms ) {
+        if ( $key =~ /^(?::[^:]+:)?$uri$/xms ) {
             $c->cache->remove( $key );
             delete $index->{$key};
             $removed++;
@@ -304,6 +304,12 @@ sub _get_page_cache_key {
     return $c->_page_cache_key if ( $c->_page_cache_key );
 
     my $key = "/" . $c->req->path;
+                                                                                                                          
+    # prepend language if I18N present.
+    if ( $c->can('language') ) {
+        $key = ':' . $c->language . ':' . $key;
+    }
+
     if ( scalar $c->req->param ) {
         my @params;
         foreach my $arg ( sort keys %{ $c->req->params } ) {
@@ -560,6 +566,11 @@ C<finalize> caches the result of the current request if needed.
 
 C<setup> initializes all default values.
 
+=head1 I18N SUPPORT
+
+If your application uses L<Catalyst::Plugin::I18N> for localization, a separate cache
+key will be used for each language a page is displayed in.
+
 =head1 KNOWN ISSUES
 
 It is not currently possible to cache pages served from the Static plugin.  If you're concerned
@@ -584,6 +595,8 @@ Andy Grundman, <andy@hybridized.org>
 =head1 THANKS
 
 Bill Moseley, <mods@hank.org>, for many patches and tests.
+
+Roberto Henríquez, <roberto@freekeylabs.com>, for i18n support.
 
 =head1 COPYRIGHT
 
