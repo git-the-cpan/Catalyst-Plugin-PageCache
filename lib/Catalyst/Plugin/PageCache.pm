@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.17';
+our $VERSION = '0.18';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -74,10 +74,15 @@ sub dispatch {
     # never serve POST request pages from cache
     return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
 
-    return $c->NEXT::dispatch(@_) if ( 
-	$c->config->{page_cache}->{auto_check_user} && 
-	$c->can('user_exists') && 
-        $c->user_exists );
+    my $hook = $c->config->{page_cache}->{cache_hook} ?
+        $c->can($c->config->{page_cache}->{cache_hook}) : undef;
+    return $c->NEXT::dispatch(@_) if ( $hook && !$c->$hook() );
+
+    return $c->NEXT::dispatch(@_) if (
+        $c->config->{page_cache}->{auto_check_user} &&
+        $c->can('user_exists') &&
+        $c->user_exists
+    );
 
     # check the page cache for a cached copy of this page
     return $c->NEXT::dispatch(@_)
@@ -192,10 +197,17 @@ sub finalize {
 
     # never cache POST requests
     return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
-    return $c->NEXT::finalize(@_) if ( 
-	$c->config->{page_cache}->{auto_check_user} && 
-	$c->can('user_exists') && 
-        $c->user_exists );
+
+    my $hook = $c->config->{page_cache}->{cache_hook} ?
+        $c->can($c->config->{page_cache}->{cache_hook}) : undef;
+    return $c->NEXT::finalize(@_) if ( $hook && !$c->$hook() );
+
+
+    return $c->NEXT::finalize(@_) if (
+        $c->config->{page_cache}->{auto_check_user} &&
+        $c->can('user_exists') &&
+        $c->user_exists
+    );
     return $c->NEXT::finalize(@_) if ( scalar @{ $c->error } );
 
     # if we already served the current request from cache, we can skip the
@@ -205,10 +217,11 @@ sub finalize {
     if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
         # is this page part of the auto_cache list?
         my $path = "/" . $c->req->path;
-		# For performance, this should be moved to setup, and generate a hash.
+
+        # For performance, this should be moved to setup, and generate a hash.
         AUTO_CACHE:
         foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
-			next if $auto =~ m/^\d$/;
+            next if $auto =~ m/^\d$/;
             if ( $path =~ /^$auto$/ ) {
                 $c->log->debug( "Auto-caching page $path" )
                     if ( $c->config->{page_cache}->{debug} );
@@ -274,13 +287,13 @@ sub setup {
     # detect the cache plugin being used and set appropriate
     # never-expires syntax
     if ( $c->can('cache') ) {
-	
+        
         # Newer C::P::Cache, cannot call $c->cache as a package method
         if ( $c->isa('Catalyst::Plugin::Cache') ) {
             return;
         }
-		
-		# Older Cache plugins
+
+        # Older Cache plugins
         if ( $c->cache->isa('Cache::FileCache') ) {
             $c->config->{page_cache}->{no_expire} = "never";
         }
@@ -298,13 +311,13 @@ sub setup {
 
 sub _get_page_cache_key {
     my $c = shift;
-
+    
     # We can't rely on the params after the user's code has run, so
     # use the key created during the initial dispatch phase
     return $c->_page_cache_key if ( $c->_page_cache_key );
 
     my $key = "/" . $c->req->path;
-                                                                                                                          
+    
     # prepend language if I18N present.
     if ( $c->can('language') ) {
         $key = ':' . $c->language . ':' . $key;
@@ -352,7 +365,19 @@ Catalyst::Plugin::PageCache - Cache the output of entire pages
             '/list',
         ],
         debug => 1,
+        # Optionally, a cache hook to be called prior to dispatch to
+        # determine if the page should be cached.  This is called both
+        # before dispatch, and before finalize.
+        cache_hook => 'some_method'
     };
+    
+    sub some_method {
+        my ( $c ) = @_;
+        if ( $c->user_exists and $c->user->some_field ) {
+            return 0; # Don't cache
+        }
+        return 1; # Cache
+    }
 
     # in a controller method
     $c->cache_page( '3600' );
@@ -373,30 +398,30 @@ Catalyst::Plugin::PageCache - Cache the output of entire pages
 
 =head1 DESCRIPTION
 
-Many dynamic websites perform heavy processing on most pages, yet this information
-may rarely change from request to request.  Using the PageCache plugin, you can
-cache the full output of different pages so they are served to your visitors as
-fast as possible.  This method of caching is very useful for withstanding a
-Slashdotting, for example.
+Many dynamic websites perform heavy processing on most pages, yet this
+information may rarely change from request to request.  Using the PageCache
+plugin, you can cache the full output of different pages so they are served to
+your visitors as fast as possible.  This method of caching is very useful for
+withstanding a Slashdotting, for example.
 
-This plugin requires that you also load a Cache plugin.  Please see the Known Issues
-when choosing a cache backend.
+This plugin requires that you also load a Cache plugin.  Please see the Known
+Issues when choosing a cache backend.
 
 =head1 WARNINGS
 
 PageCache should be placed at the end of your plugin list.
 
 You should only use the page cache on pages which have NO user-specific or
-customized content.  Also, be careful if caching a page which may forward to another
-controller.  For example, if you cache a page behind a login screen, the logged-in
-version may be cached and served to unauthenticated users.
+customized content.  Also, be careful if caching a page which may forward to
+another controller.  For example, if you cache a page behind a login screen,
+the logged-in version may be cached and served to unauthenticated users.
 
 Note that pages that result from POST requests will never be cached.
 
 =head1 PERFORMANCE
 
-On my Athlon XP 1800+ Linux server, a cached page is served in 0.008 seconds when
-using the HTTP::Daemon server and any of the Cache plugins.
+On my Athlon XP 1800+ Linux server, a cached page is served in 0.008 seconds
+when using the HTTP::Daemon server and any of the Cache plugins.
 
 =head1 CONFIGURATION
 
@@ -404,33 +429,55 @@ Configuration is optional.  You may define the following configuration values:
 
     expires => $seconds
 
-This will set the default expiration time for all page caches.  If you do not specify
-this, expiration defaults to 300 seconds (5 minutes).
+This will set the default expiration time for all page caches.  If you do not
+specify this, expiration defaults to 300 seconds (5 minutes).
 
     set_http_headers => 1
 
-Enabling this value will cause Catalyst to set the correct HTTP headers to allow
-browsers and proxy servers to cache your page.  This will further reduce the load on
-your server.  The headers are set in such a way that the browser/proxy cache will
-expire at the same time as your cache.  The Last-Modified header will be preserved
-if you have already specified it.
-
+Enabling this value will cause Catalyst to set the correct HTTP headers to
+allow browsers and proxy servers to cache your page.  This will further reduce
+the load on your server.  The headers are set in such a way that the
+browser/proxy cache will expire at the same time as your cache.  The
+Last-Modified header will be preserved if you have already specified it.
 
     auto_cache => [
         $uri,
     ]
 
-To automatically cache certain pages, or all pages, you can specify auto-cache URIs as
-an array reference.  Any controller within your application that matches one of the
-auto_cache URIs will be cached using the default expiration time.  URIs may be specified
-as absolute: '/list' or as a regex: '/view/.*'
+To automatically cache certain pages, or all pages, you can specify auto-cache
+URIs as an array reference.  Any controller within your application that
+matches one of the auto_cache URIs will be cached using the default expiration
+time.  URIs may be specified as absolute: '/list' or as a regex: '/view/.*'
 
     debug => 1
 
-This will print additional debugging information to the Catalyst log.  You will need to
-have -Debug enabled to see these messages.
-You can also specify an optional config parameter auto_check_user. If this
-option is enabled, automatic caching is disabled for logged in users.
+This will print additional debugging information to the Catalyst log.  You will
+need to have -Debug enabled to see these messages.  You can also specify an
+optional config parameter auto_check_user. If this option is enabled,
+automatic caching is disabled for logged in users.
+
+    cache_hook => 'cache_hook_method'
+
+Calls a method on the application that is expected to return a true or false.
+This method is called before dispatch, and before finalize so you can short
+circuit the pagecache behavior.  As an example, if you want to disable
+PageCache while running under debug mode:
+   
+    package MyApp;
+    
+    ...
+    
+    sub cache_hook_method { return shift->debug; }
+
+Or, if you want to not cache for certain roles, say "admin":
+    
+    sub cache_hook_method {
+        my ( $c ) = @_;
+        return !$c->check_user_roles('admin');
+    }
+
+Note that this is called BEFORE auto_check_user, so you have more flexibility
+to determine what to do for not logged in users.
 
 =head1 METHODS
 
@@ -442,9 +489,9 @@ Call cache_page in any controller method you wish to be cached.
 
 The page will be cached for $expire seconds.  Every user who visits the URI(s)
 referenced by that controller will receive the page directly from cache.  Your
-controller will not be processed again until the cache expires.  You can set this
-value to as low as 60 seconds if you have heavy traffic to greatly improve site
-performance.
+controller will not be processed again until the cache expires.  You can set
+this value to as low as 60 seconds if you have heavy traffic to greatly
+improve site performance.
 
 Pass in a DateTime object to make the cache expire at a given point in time.
 
@@ -548,9 +595,9 @@ To clear the cached value for a URI, you may call clear_cached_page.
     $c->clear_cached_page( '/view/userlist' );
     $c->clear_cached_page( '/view/.*' );
 
-This method takes an absolute path or regular expression.  For obvious reasons, this
-must be called from a different controller than the cached controller. You may for
-example wish to build an admin page that lets you clear page caches.
+This method takes an absolute path or regular expression.  For obvious reasons,
+this must be called from a different controller than the cached controller. You
+may for example wish to build an admin page that lets you clear page caches.
 
 =head1 INTERNAL EXTENDED METHODS
 
@@ -568,24 +615,26 @@ C<setup> initializes all default values.
 
 =head1 I18N SUPPORT
 
-If your application uses L<Catalyst::Plugin::I18N> for localization, a separate cache
-key will be used for each language a page is displayed in.
+If your application uses L<Catalyst::Plugin::I18N> for localization, a
+separate cache key will be used for each language a page is displayed in.
 
 =head1 KNOWN ISSUES
 
-It is not currently possible to cache pages served from the Static plugin.  If you're concerned
-enough about performance to use this plugin, you should be serving static files directly from
-your web server anyway.
+It is not currently possible to cache pages served from the Static plugin.  If
+you're concerned enough about performance to use this plugin, you should be
+serving static files directly from your web server anyway.
 
-Cache::FastMmap does not have the ability to specify different expiration times for cached
-data.  Therefore, if your MyApp->config->{cache}->{expires} value is set to anything other
-than 0, you may experience problems with the clear_cached_page method, because the cache
-index may be removed.  For best results, you may wish to use Cache::FileCache or Cache::Memcached
-as your cache backend.
+Cache::FastMmap does not have the ability to specify different expiration times
+for cached data.  Therefore, if your MyApp->config->{cache}->{expires} value is
+set to anything other than 0, you may experience problems with the
+clear_cached_page method, because the cache index may be removed.  For best
+results, you may wish to use Cache::FileCache or Cache::Memcached as your cache
+backend.
 
 =head1 SEE ALSO
 
-L<Catalyst>, L<Catalyst::Plugin::Cache::FastMmap>, L<Catalyst::Plugin::Cache::FileCache>,
+L<Catalyst>, L<Catalyst::Plugin::Cache::FastMmap>,
+L<Catalyst::Plugin::Cache::FileCache>,
 L<Catalyst::Plugin::Cache::Memcached>
 
 =head1 AUTHOR

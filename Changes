@@ -1,5 +1,9 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.18    2008-04-25 11:30:00
+        - cache_hook method, run a method before returning a cached page.
+          (J. Shirley)
+
 0.17    2007-07-29 22:00:00
         - If using C::P::I18N, allow caching of different versions of a
           single URI based on the page language. (Roberto Henríquez)

@@ -19,6 +19,8 @@ t/01use.t
 t/02pod.t
 t/03podcoverage.t
 t/04cache.t
+t/04critic.rc
+t/04critic.t
 t/05expires.t
 t/06auto_cache.t
 t/07set_http_headers.t
@@ -27,6 +29,7 @@ t/09datetime.t
 t/10options.t
 t/11nocache.t
 t/12i18n.t
+t/13cachehook.t
 t/lib/TestApp.pm
 t/lib/TestApp/C/Cache.pm
 t/lib/TestAppI18N.pm

@@ -13,15 +13,29 @@ SYNOPSIS
                 '/list',
             ],
             debug => 1,
+            # Optionally, a cache hook to be called prior to dispatch to
+            # determine if the page should be cached.  This is called both
+            # before dispatch, and before finalize.
+            cache_hook => 'some_method'
         };
+        
+    sub some_method {
+            my ( $c ) = @_;
+            if ( $c->user_exists and $c->user->some_field ) {
+                return 0; # Don't cache
+            }
+            return 1; # Cache
+        }
 
         # in a controller method
         $c->cache_page( '3600' );
 
         $c->clear_cached_page( '/list' );
 
+
         # Expire at a specific time
         $c->cache_page( $datetime_object );
+
 
         # Fine control
         $c->cache_page(
@@ -89,6 +103,29 @@ CONFIGURATION
     You will need to have -Debug enabled to see these messages. You can also
     specify an optional config parameter auto_check_user. If this option is
     enabled, automatic caching is disabled for logged in users.
+
+        cache_hook => 'cache_hook_method'
+
+    Calls a method on the application that is expected to return a true or
+    false. This method is called before dispatch, and before finalize so you
+    can short circuit the pagecache behavior. As an example, if you want to
+    disable PageCache while running under debug mode:
+
+        package MyApp;
+        
+    ...
+        
+    sub cache_hook_method { return shift->debug; }
+
+    Or, if you want to not cache for certain roles, say "admin":
+
+        sub cache_hook_method {
+            my ( $c ) = @_;
+            return !$c->check_user_roles('admin');
+        }
+
+    Note that this is called BEFORE auto_check_user, so you have more
+    flexibility to determine what to do for not logged in users.
 
 METHODS
   cache_page
@@ -206,6 +243,11 @@ INTERNAL EXTENDED METHODS
   setup
     "setup" initializes all default values.
 
+I18N SUPPORT
+    If your application uses Catalyst::Plugin::I18N for localization, a
+    separate cache key will be used for each language a page is displayed
+    in.
+
 KNOWN ISSUES
     It is not currently possible to cache pages served from the Static
     plugin. If you're concerned enough about performance to use this plugin,
@@ -227,6 +269,8 @@ AUTHOR
 
 THANKS
     Bill Moseley, <mods@hank.org>, for many patches and tests.
+
+    Roberto Henr√quez, <roberto@freekeylabs.com>, for i18n support.
 
 COPYRIGHT
     This program is free software, you can redistribute it and/or modify it
