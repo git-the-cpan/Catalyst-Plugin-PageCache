@@ -1,5 +1,10 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.19    2008-08-22 13:00:00
+        - Change config namespace to $c->config->{'Plugin::PageCache'}, old namespace will
+          still continue to work.
+        - key_maker method, allows custom cache keys to be used. (Martin Ellison)
+
 0.18    2008-04-25 11:30:00
         - cache_hook method, run a method before returning a cached page.
           (J. Shirley)

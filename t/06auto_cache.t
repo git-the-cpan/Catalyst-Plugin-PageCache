@@ -21,7 +21,7 @@ rmtree 't/var' if -d 't/var';
 use Catalyst::Test 'TestApp';
 
 # add config option
-TestApp->config->{page_cache}->{auto_cache} = [
+TestApp->config->{'Plugin::PageCache'}->{auto_cache} = [
     '/cache/auto_count',
     '/cache/another.+',
 ];

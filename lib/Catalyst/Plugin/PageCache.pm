@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -24,7 +24,7 @@ sub cache_page {
     if ( ref($args[0]) eq 'HASH' || @args > 1 ) {
         my $options = ref( $args[0] ) ? shift : { @args };
 
-        $options->{cache_seconds} = $c->config->{page_cache}->{expires}
+        $options->{cache_seconds} = $c->config->{'Plugin::PageCache'}->{expires}
             unless exists $options->{cache_seconds};
 
         $c->_cache_page( $options );
@@ -37,8 +37,7 @@ sub cache_page {
     $expires = $expires->epoch - time
         if ref($expires) && $expires->isa('DateTime');
 
-
-    $expires ||= $c->config->{page_cache}->{expires};
+    $expires ||= $c->config->{'Plugin::PageCache'}->{expires};
 
     # mark the page for caching during finalize
     if ( $expires > 0 ) {
@@ -50,6 +49,8 @@ sub clear_cached_page {
     my ( $c, $uri ) = @_;
 
     return unless ( $c->can( 'cache' ) );
+    
+    my $is_debug = $c->config->{'Plugin::PageCache'}->{debug};
 
     my $removed = 0;
 
@@ -60,12 +61,18 @@ sub clear_cached_page {
             $c->cache->remove( $key );
             delete $index->{$key};
             $removed++;
-            $c->log->debug( "Removed $key from page cache" )
-                if ( $c->config->{page_cache}->{debug} );
+            
+            $c->log->debug( "Removed $key from page cache" ) if $is_debug;
         }
     }
-    $c->cache->set( "_page_cache_index", $index,
-        $c->config->{page_cache}->{no_expire} ) if ( $removed );
+    
+    if ( $removed ) {
+        $c->cache->set(
+            "_page_cache_index",
+            $index,
+            $c->config->{'Plugin::PageCache'}->{no_expire}
+        );
+    }
 }
 
 sub dispatch {
@@ -74,15 +81,17 @@ sub dispatch {
     # never serve POST request pages from cache
     return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
 
-    my $hook = $c->config->{page_cache}->{cache_hook} ?
-        $c->can($c->config->{page_cache}->{cache_hook}) : undef;
+    my $hook =
+        $c->config->{'Plugin::PageCache'}->{cache_hook}
+      ? $c->can($c->config->{'Plugin::PageCache'}->{cache_hook})
+      : undef;
+    
     return $c->NEXT::dispatch(@_) if ( $hook && !$c->$hook() );
 
-    return $c->NEXT::dispatch(@_) if (
-        $c->config->{page_cache}->{auto_check_user} &&
-        $c->can('user_exists') &&
-        $c->user_exists
-    );
+    return $c->NEXT::dispatch(@_)
+      if ( $c->config->{'Plugin::PageCache'}->{auto_check_user}
+        && $c->can('user_exists')
+        && $c->user_exists);
 
     # check the page cache for a cached copy of this page
     return $c->NEXT::dispatch(@_)
@@ -95,29 +104,27 @@ sub dispatch {
 
     if ( $data->{expire_time} and $data->{expire_time} <= time ) {
         $c->log->debug( "Expiring $key from page cache" )
-            if ( $c->config->{page_cache}->{debug} );
+          if ($c->config->{'Plugin::PageCache'}->{debug});
 
         $c->cache->remove( $key );
 
         my $index = $c->cache->get( "_page_cache_index" ) || {};
         delete $index->{$key};
         $c->cache->set( "_page_cache_index", $index,
-            $c->config->{page_cache}->{no_expire} );
+            $c->config->{'Plugin::PageCache'}->{no_expire});
 
         return $c->NEXT::dispatch(@_);
     }
 
-    $c->log->debug( "Serving $key from page cache, expires in " .
-        ( $data->{expire_time} - time ) . " seconds" )
-        if ( $c->config->{page_cache}->{debug} );
+    $c->log->debug("Serving $key from page cache, expires in "
+          . ($data->{expire_time} - time)
+          . " seconds")
+      if ($c->config->{'Plugin::PageCache'}->{debug});
 
     $c->_page_cache_used( 1 );
 
-
     # Check If-Modified-Since headers
     return 1 if $c->_page_cache_not_modified( $data );
-
-
 
     # Serve cached page
 
@@ -126,10 +133,8 @@ sub dispatch {
     $c->res->content_type( join '; ', @{$data->{content_type}} )
         if $data->{content_type};
 
-
     $c->res->content_encoding( $data->{content_encoding} )
         if $data->{content_encoding};
-
 
     $c->_set_page_cache_headers( $data );
 
@@ -157,14 +162,12 @@ sub _page_cache_not_modified {
     return;
 }
 
-
 # Sets cache headers for the page if set_http_headers is true.
 
 sub _set_page_cache_headers {
     my ( $c, $data ) = @_;
 
-    return unless $c->config->{page_cache}->{set_http_headers};
-
+    return unless $c->config->{'Plugin::PageCache'}->{set_http_headers};
 
     if ( exists $data->{expires} ) {
 
@@ -175,15 +178,16 @@ sub _set_page_cache_headers {
             return;
         }
 
-        $c->res->headers->header( 'Cache-Control' =>
-            "max-age=" . $data->{expires} );
+        $c->res->headers->header(
+            'Cache-Control' => "max-age=" . $data->{expires});
 
         $c->res->headers->expires( time + $data->{expires} );
 
-    } else {
+    }
+    else {
 
-        $c->res->headers->header( 'Cache-Control' =>
-            "max-age=" . ( $data->{expire_time} - time ) );
+        $c->res->headers->header(
+            'Cache-Control' => "max-age=" . ($data->{expire_time} - time));
 
         $c->res->headers->expires( $data->{expire_time} );
     }
@@ -198,33 +202,37 @@ sub finalize {
     # never cache POST requests
     return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
 
-    my $hook = $c->config->{page_cache}->{cache_hook} ?
-        $c->can($c->config->{page_cache}->{cache_hook}) : undef;
+    my $hook =
+        $c->config->{'Plugin::PageCache'}->{cache_hook}
+      ? $c->can($c->config->{'Plugin::PageCache'}->{cache_hook})
+      : undef;
     return $c->NEXT::finalize(@_) if ( $hook && !$c->$hook() );
 
-
-    return $c->NEXT::finalize(@_) if (
-        $c->config->{page_cache}->{auto_check_user} &&
-        $c->can('user_exists') &&
-        $c->user_exists
-    );
+    return $c->NEXT::finalize(@_)
+      if ( $c->config->{'Plugin::PageCache'}->{auto_check_user}
+        && $c->can('user_exists')
+        && $c->user_exists);
     return $c->NEXT::finalize(@_) if ( scalar @{ $c->error } );
 
     # if we already served the current request from cache, we can skip the
     # rest of this method
     return $c->NEXT::finalize(@_) if ( $c->_page_cache_used );
 
-    if ( !$c->_cache_page && scalar @{ $c->config->{page_cache}->{auto_cache} } ) {
+    if (!$c->_cache_page
+        && scalar @{ $c->config->{'Plugin::PageCache'}->{auto_cache} })
+    {
+
         # is this page part of the auto_cache list?
         my $path = "/" . $c->req->path;
 
         # For performance, this should be moved to setup, and generate a hash.
         AUTO_CACHE:
-        foreach my $auto ( @{ $c->config->{page_cache}->{auto_cache} } ) {
+        foreach my $auto (@{ $c->config->{'Plugin::PageCache'}->{auto_cache} })
+        {
             next if $auto =~ m/^\d$/;
             if ( $path =~ /^$auto$/ ) {
                 $c->log->debug( "Auto-caching page $path" )
-                    if ( $c->config->{page_cache}->{debug} );
+                    if ($c->config->{'Plugin::PageCache'}->{debug});
                 $c->cache_page;
                 last AUTO_CACHE;
             }
@@ -236,9 +244,9 @@ sub finalize {
 
         my $now = time;
 
-
-        $c->log->debug( "Caching page $key for $options->{cache_seconds} seconds" )
-            if ( $c->config->{page_cache}->{debug} );
+        $c->log->debug(
+            "Caching page $key for $options->{cache_seconds} seconds"
+        ) if ($c->config->{'Plugin::PageCache'}->{debug});
 
         # Cache some additional metadata along with the content
         # Some caches don't support expirations, so we do it manually
@@ -246,7 +254,9 @@ sub finalize {
             body => $c->res->body || undef,
             content_type => [ $c->res->content_type ] || undef,
             content_encoding => $c->res->content_encoding || undef,
-            create_time => $options->{last_modified} || $c->res->headers->last_modified || $now,
+            create_time      => $options->{last_modified}
+                || $c->res->headers->last_modified
+                || $now,
             expire_time => $now + $options->{cache_seconds},
         };
 
@@ -256,7 +266,6 @@ sub finalize {
 
         $c->_set_page_cache_headers( $data );  # don't forget the first time
 
-
         # Keep an index cache of all pages that have been cached, for use
         # with clear_cached_page
 
@@ -265,7 +274,7 @@ sub finalize {
 
         # Save date in cache
         $c->cache->set( "_page_cache_index", $index,
-            $c->config->{page_cache}->{no_expire} );
+            $c->config->{'Plugin::PageCache'}->{no_expire});
 
         # Check for If-Modified-Since
         $c->_page_cache_not_modified( $data );
@@ -279,10 +288,15 @@ sub setup {
 
     $c->NEXT::setup(@_);
 
-    $c->config->{page_cache}->{auto_cache} ||= [];
-    $c->config->{page_cache}->{expires} ||= 60 * 5;
-    $c->config->{page_cache}->{set_http_headers} ||= 0;
-    $c->config->{page_cache}->{debug} ||= $c->debug;
+    # allow code using old config key to work
+    if ( $c->config->{page_cache} and !$c->config->{'Plugin::PageCache'} ) {
+        $c->config->{'Plugin::PageCache'} = delete $c->config->{page_cache};
+    }
+
+    $c->config->{'Plugin::PageCache'}->{auto_cache}       ||= [];
+    $c->config->{'Plugin::PageCache'}->{expires}          ||= 60 * 5;
+    $c->config->{'Plugin::PageCache'}->{set_http_headers} ||= 0;
+    $c->config->{'Plugin::PageCache'}->{debug}            ||= $c->debug;
 
     # detect the cache plugin being used and set appropriate
     # never-expires syntax
@@ -295,13 +309,15 @@ sub setup {
 
         # Older Cache plugins
         if ( $c->cache->isa('Cache::FileCache') ) {
-            $c->config->{page_cache}->{no_expire} = "never";
+            $c->config->{'Plugin::PageCache'}->{no_expire} = "never";
         }
-        elsif ( $c->cache->isa('Cache::Memcached') ||
-                  $c->cache->isa('Cache::FastMmap') ) {
+        elsif ($c->cache->isa('Cache::Memcached')
+            || $c->cache->isa('Cache::FastMmap'))
+        {
+
           # Memcached defaults to 'never' when not given an expiration
           # In FastMmap, it's not possible to set an expiration
-          $c->config->{page_cache}->{no_expire} = undef;
+            $c->config->{'Plugin::PageCache'}->{no_expire} = undef;
         }
     }
     else {
@@ -316,7 +332,9 @@ sub _get_page_cache_key {
     # use the key created during the initial dispatch phase
     return $c->_page_cache_key if ( $c->_page_cache_key );
 
-    my $key = "/" . $c->req->path;
+    # override key if required
+    my $keymaker = $c->config->{'Plugin::PageCache'}->{key_maker};
+    my $key = $keymaker ? $keymaker->($c) : "/" . $c->req->path;
     
     # prepend language if I18N present.
     if ( $c->can('language') ) {
@@ -357,22 +375,24 @@ Catalyst::Plugin::PageCache - Cache the output of entire pages
     use Catalyst;
     MyApp->setup( qw/Cache::FileCache PageCache/ );
 
-    MyApp->config->{page_cache} = {
-        expires => 300,
-        set_http_headers => 1,
-        auto_cache => [
-            '/view/.*',
-            '/list',
-        ],
-        debug => 1,
-        # Optionally, a cache hook to be called prior to dispatch to
-        # determine if the page should be cached.  This is called both
-        # before dispatch, and before finalize.
-        cache_hook => 'some_method'
-    };
+    __PACKAGE__->config(
+        'Plugin::PageCache' => {
+            expires => 300,
+            set_http_headers => 1,
+            auto_cache => [
+                '/view/.*',
+                '/list',
+            ],
+            debug => 1,
+            # Optionally, a cache hook to be called prior to dispatch to
+            # determine if the page should be cached.  This is called both
+            # before dispatch, and before finalize.
+            cache_hook => 'some_method'
+        }
+    );
     
     sub some_method {
-        my ( $c ) = @_;
+        my $c = shift;
         if ( $c->user_exists and $c->user->some_field ) {
             return 0; # Don't cache
         }
@@ -478,6 +498,17 @@ Or, if you want to not cache for certain roles, say "admin":
 
 Note that this is called BEFORE auto_check_user, so you have more flexibility
 to determine what to do for not logged in users.
+
+To override the generation of page keys:
+
+    __PACKAGE__->config(
+        'Plugin::PageCache' => {
+            key_maker => sub {
+                my $c = shift;
+                return $c->req->base . '/' . $c->req->path;
+            }
+        }
+    );
 
 =head1 METHODS
 

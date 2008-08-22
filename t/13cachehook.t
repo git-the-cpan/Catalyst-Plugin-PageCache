@@ -24,8 +24,8 @@ rmtree 't/var' if -d 't/var';
 use Catalyst::Test 'TestApp';
 
 # add config option
-TestApp->config->{page_cache}->{set_http_headers} = 1;
-TestApp->config->{page_cache}->{cache_hook}   = 'use_pagecache';
+TestApp->config->{'Plugin::PageCache'}->{set_http_headers} = 1;
+TestApp->config->{'Plugin::PageCache'}->{cache_hook}   = 'use_pagecache';
 
 local *TestApp::use_pagecache = sub { 0 };
 cmp_ok( TestApp->use_pagecache(), '==', '0' );

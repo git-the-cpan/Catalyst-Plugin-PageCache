@@ -5,22 +5,24 @@ SYNOPSIS
         use Catalyst;
         MyApp->setup( qw/Cache::FileCache PageCache/ );
 
-        MyApp->config->{page_cache} = {
-            expires => 300,
-            set_http_headers => 1,
-            auto_cache => [
-                '/view/.*',
-                '/list',
-            ],
-            debug => 1,
-            # Optionally, a cache hook to be called prior to dispatch to
-            # determine if the page should be cached.  This is called both
-            # before dispatch, and before finalize.
-            cache_hook => 'some_method'
-        };
+        __PACKAGE__->config(
+            'Plugin::PageCache' => {
+                expires => 300,
+                set_http_headers => 1,
+                auto_cache => [
+                    '/view/.*',
+                    '/list',
+                ],
+                debug => 1,
+                # Optionally, a cache hook to be called prior to dispatch to
+                # determine if the page should be cached.  This is called both
+                # before dispatch, and before finalize.
+                cache_hook => 'some_method'
+            }
+        );
         
     sub some_method {
-            my ( $c ) = @_;
+            my $c = shift;
             if ( $c->user_exists and $c->user->some_field ) {
                 return 0; # Don't cache
             }
@@ -126,6 +128,17 @@ CONFIGURATION
 
     Note that this is called BEFORE auto_check_user, so you have more
     flexibility to determine what to do for not logged in users.
+
+    To override the generation of page keys:
+
+        __PACKAGE__->config(
+            'Plugin::PageCache' => {
+                key_maker => sub {
+                    my $c = shift;
+                    return $c->req->base . '/' . $c->req->path;
+                }
+            }
+        );
 
 METHODS
   cache_page

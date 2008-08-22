@@ -30,7 +30,7 @@ rmtree 't/var' if -d 't/var';
 use Catalyst::Test 'TestApp';
 
 # add config option
-TestApp->config->{page_cache}->{set_http_headers} = 1;
+TestApp->config->{'Plugin::PageCache'}->{set_http_headers} = 1;
 
 # cache a page
 my $cache_time = time;

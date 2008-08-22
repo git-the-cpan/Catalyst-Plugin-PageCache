@@ -21,7 +21,7 @@ rmtree 't/var' if -d 't/var';
 use Catalyst::Test 'TestApp';
 
 # add config option
-TestApp->config->{page_cache}->{expires} = 2;
+TestApp->config->{'Plugin::PageCache'}->{expires} = 2;
 
 # cache a page
 ok( my $res = request('http://localhost/cache/count'), 'request ok' );
