@@ -1,5 +1,8 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.21    2008-10-02 10:45:00
+        - Check for FileCache in new test to avoid test failures.
+
 0.20    2008-10-02 00:15:00
         - Config option 'cache_headers' to cache HTTP headers.  This is needed
           if operating behind edge caches such as Akamai. (Chris Alef)

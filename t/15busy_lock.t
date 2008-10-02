@@ -9,6 +9,13 @@ use Test::More;
 use File::Path;
 use Time::HiRes qw(time sleep);
 
+BEGIN {
+    eval "use Catalyst::Plugin::Cache::FileCache";
+    if ( $@ ) {
+        plan skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing';
+    }
+}
+
 plan $^O =~ /Win32/
     ? ( skip_all => 'Cannot run this test on Windows' )
     : ( tests => 4 );
