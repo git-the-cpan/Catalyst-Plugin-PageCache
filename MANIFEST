@@ -30,6 +30,8 @@ t/10options.t
 t/11nocache.t
 t/12i18n.t
 t/13cachehook.t
+t/14keymaker.t
+t/15busy_lock.t
 t/lib/TestApp.pm
 t/lib/TestApp/C/Cache.pm
 t/lib/TestAppI18N.pm

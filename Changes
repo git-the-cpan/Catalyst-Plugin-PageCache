@@ -1,8 +1,17 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.20    2008-10-02 00:15:00
+        - Config option 'cache_headers' to cache HTTP headers.  This is needed
+          if operating behind edge caches such as Akamai. (Chris Alef)
+        - Config option 'busy_lock' borrowed from Mason, avoids the "dog-pile"
+          effect where many concurrent requests can generate and cache the same
+          page.  See the documentation for details.
+        - The ability to call clear_cached_page can be disabled to improve
+          performance (a cache index will not be created/updated).
+        
 0.19    2008-08-22 13:00:00
-        - Change config namespace to $c->config->{'Plugin::PageCache'}, old namespace will
-          still continue to work.
+        - Change config namespace to $c->config->{'Plugin::PageCache'}, old
+          namespace will still continue to work.
         - key_maker method, allows custom cache keys to be used. (Martin Ellison)
 
 0.18    2008-04-25 11:30:00

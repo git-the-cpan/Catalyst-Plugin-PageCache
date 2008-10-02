@@ -12,7 +12,7 @@ BEGIN {
     eval "use Catalyst::Plugin::Cache::FileCache";
     plan $@
         ? ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' )
-        : ( tests => 7 );
+        : ( tests => 11 );
 }
 
 # remove previous cache
@@ -20,7 +20,8 @@ rmtree 't/var' if -d 't/var';
 
 use Catalyst::Test 'TestApp';
 
-# add config option
+# add config options
+TestApp->config->{'Plugin::PageCache'}->{cache_headers}    = 1;
 TestApp->config->{'Plugin::PageCache'}->{set_http_headers} = 1;
 
 # cache a page
@@ -37,5 +38,8 @@ like( $res->headers->{'cache-control'}, qr/max-age=\d{3}/, 'cache-control header
 cmp_ok( $res->headers->last_modified, '>=', $cache_time, 'last-modified header matches correct time' );
 cmp_ok( $res->headers->expires, '>=', $cache_time + 300, 'expires header matches correct time' );
 
-
-
+#check that extension headers are cached and returned
+ok( $res = request('http://localhost/cache/cache_extension_header/10'), 'request ok' );
+is( $res->headers->header('X-Bogus-Extension'), 'True', 'Bogus header returned');
+ok( $res = request('http://localhost/cache/cache_extension_header/10'), 'request ok' );
+is( $res->headers->header('X-Bogus-Extension'), 'True', 'Bogus header returned from cache');

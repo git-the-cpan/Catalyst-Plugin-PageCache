@@ -4,7 +4,7 @@ use strict;
 use base qw/Class::Accessor::Fast/;
 use NEXT;
 
-our $VERSION = '0.19';
+our $VERSION = '0.20';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -50,10 +50,16 @@ sub clear_cached_page {
 
     return unless ( $c->can( 'cache' ) );
     
+    # Warn if index was disabled
+    if ( $c->config->{'Plugin::PageCache'}->{disable_index} ) {
+        $c->log->warn("Warning: clear_cached_page($uri) did not clear the cache, disable_index is set");
+        return;
+    }
+    
     my $is_debug = $c->config->{'Plugin::PageCache'}->{debug};
 
     my $removed = 0;
-
+    
     my $index = $c->cache->get( "_page_cache_index" ) || {};
 
     foreach my $key ( keys %{$index} ) {
@@ -61,11 +67,11 @@ sub clear_cached_page {
             $c->cache->remove( $key );
             delete $index->{$key};
             $removed++;
-            
+        
             $c->log->debug( "Removed $key from page cache" ) if $is_debug;
         }
     }
-    
+
     if ( $removed ) {
         $c->cache->set(
             "_page_cache_index",
@@ -102,16 +108,30 @@ sub dispatch {
 
     # Time to remove page from cache?
 
-    if ( $data->{expire_time} and $data->{expire_time} <= time ) {
-        $c->log->debug( "Expiring $key from page cache" )
-          if ($c->config->{'Plugin::PageCache'}->{debug});
+    if ( $data->{expire_time} && $data->{expire_time} <= time ) {
+        if ( my $busy_lock = $c->config->{'Plugin::PageCache'}->{busy_lock} ) {
+            # Extend the expiration time for others while
+            # this caller refreshes the cache
+            $data->{expire_time} = time() + $busy_lock;
+            
+            $c->cache->set( $key, $data );
+            
+            $c->log->debug( "$key has expired, being refreshed for $busy_lock seconds" )
+                if ($c->config->{'Plugin::PageCache'}->{debug});
+        }
+        else {
+            $c->log->debug( "Expiring $key from page cache" )
+              if ($c->config->{'Plugin::PageCache'}->{debug});
 
-        $c->cache->remove( $key );
+            $c->cache->remove( $key );
 
-        my $index = $c->cache->get( "_page_cache_index" ) || {};
-        delete $index->{$key};
-        $c->cache->set( "_page_cache_index", $index,
-            $c->config->{'Plugin::PageCache'}->{no_expire});
+            if ( !$c->config->{'Plugin::PageCache'}->{disable_index} ) {
+                my $index = $c->cache->get( "_page_cache_index" ) || {};
+                delete $index->{$key};
+                $c->cache->set( "_page_cache_index", $index,
+                    $c->config->{'Plugin::PageCache'}->{no_expire});
+            }
+        }
 
         return $c->NEXT::dispatch(@_);
     }
@@ -167,6 +187,14 @@ sub _page_cache_not_modified {
 sub _set_page_cache_headers {
     my ( $c, $data ) = @_;
 
+    if ( $c->config->{'Plugin::PageCache'}->{cache_headers} ) {
+        for my $header_key ( keys %{ $data->{headers} || {} } ) {
+            $c->res->headers->header(
+                $header_key => $data->{headers}->{$header_key}
+            );
+        }
+    }
+    
     return unless $c->config->{'Plugin::PageCache'}->{set_http_headers};
 
     if ( exists $data->{expires} ) {
@@ -259,6 +287,13 @@ sub finalize {
                 || $now,
             expire_time => $now + $options->{cache_seconds},
         };
+        
+        if ( $c->config->{'Plugin::PageCache'}->{cache_headers} ) {
+            $data->{headers} = {
+                map { $_ => $c->res->headers->header($_) }
+                  $c->res->headers->header_field_names
+            };
+        }
 
         $data->{expires} = $options->{expires} if exists $options->{expires};
 
@@ -266,15 +301,16 @@ sub finalize {
 
         $c->_set_page_cache_headers( $data );  # don't forget the first time
 
-        # Keep an index cache of all pages that have been cached, for use
-        # with clear_cached_page
+        if ( !$c->config->{'Plugin::PageCache'}->{disable_index} ) {
+            # Keep an index cache of all pages that have been cached, for use
+            # with clear_cached_page
+            my $index = $c->cache->get( "_page_cache_index" ) || {};
+            $index->{$key} = 1;
 
-        my $index = $c->cache->get( "_page_cache_index" ) || {};
-        $index->{$key} = 1;
-
-        # Save date in cache
-        $c->cache->set( "_page_cache_index", $index,
-            $c->config->{'Plugin::PageCache'}->{no_expire});
+            # Save date in cache
+            $c->cache->set( "_page_cache_index", $index,
+                $c->config->{'Plugin::PageCache'}->{no_expire});
+        }
 
         # Check for If-Modified-Since
         $c->_page_cache_not_modified( $data );
@@ -295,7 +331,10 @@ sub setup {
 
     $c->config->{'Plugin::PageCache'}->{auto_cache}       ||= [];
     $c->config->{'Plugin::PageCache'}->{expires}          ||= 60 * 5;
+    $c->config->{'Plugin::PageCache'}->{cache_headers}    ||= 0;
     $c->config->{'Plugin::PageCache'}->{set_http_headers} ||= 0;
+    $c->config->{'Plugin::PageCache'}->{disable_index}    ||= 0;
+    $c->config->{'Plugin::PageCache'}->{busy_lock}        ||= 0;
     $c->config->{'Plugin::PageCache'}->{debug}            ||= $c->debug;
 
     # detect the cache plugin being used and set appropriate
@@ -452,13 +491,20 @@ Configuration is optional.  You may define the following configuration values:
 This will set the default expiration time for all page caches.  If you do not
 specify this, expiration defaults to 300 seconds (5 minutes).
 
+    cache_headers => 1
+
+Enable this value if you need your cached responses to include custom HTTP
+headers set by your application.  This may be necessary if you operate behind
+an edge cache such as Akamai.  This option is disabled by default.
+
     set_http_headers => 1
 
 Enabling this value will cause Catalyst to set the correct HTTP headers to
 allow browsers and proxy servers to cache your page.  This will further reduce
 the load on your server.  The headers are set in such a way that the
 browser/proxy cache will expire at the same time as your cache.  The
-Last-Modified header will be preserved if you have already specified it.
+Last-Modified header will be preserved if you have already specified it.  This
+option is disabled by default.
 
     auto_cache => [
         $uri,
@@ -468,6 +514,25 @@ To automatically cache certain pages, or all pages, you can specify auto-cache
 URIs as an array reference.  Any controller within your application that
 matches one of the auto_cache URIs will be cached using the default expiration
 time.  URIs may be specified as absolute: '/list' or as a regex: '/view/.*'
+
+    disable_index => 1
+
+In order to support the C<clear_cached_page> method, PageCache keeps an index of
+all cached pages.  If you don't intend to use C<clear_cached_page>, you may 
+enable this config option to avoid the overhead of creating and updating the
+cache index.  This option is disabled by default.
+
+    busy_lock => 10
+
+On a high traffic site where page re-generation may take many seconds, a common
+problem encountered is the "dog-pile" effect, where many concurrent connections all
+hit a page where the cache has expired and all perform the same expensive operation
+to rebuild the cache.  To prevent this situation, you can set the busy_lock option
+to the maximum number of seconds any of your pages can be expected to take to
+rebuild the cache.  Then, when the cache expires, the first request will rebuild the
+cache while also extending the expiration time by the number of seconds specified,
+allowing other requests that arrive before the cache has been rebuilt to use the
+previously cached page.  This option is disabled by default.
 
     debug => 1
 
@@ -532,7 +597,7 @@ Pass in a DateTime object to make the cache expire at a given point in time.
 The page will be stored in the page cache until this time.
 
 If set_http_headers is set then Expires and Cache-Control headers will
-also be set to expire at the given date as well
+also be set to expire at the given date as well.
 
 Pass in a list or hash reference for finer control.
 
@@ -572,52 +637,7 @@ Setting zero (0) for expires will result in the page being cached, but headers
 will be sent telling the client to not cache the page.  Allows caching expensive
 content to generate, but any changes will be seen right away.
 
-
-
 =back
-
-
-To make the cache expire at a given point in time, pass in a DateTime object.
-
-    $two_hours = DateTime->now->add( hours => 2 );
-    $c->cache_page( $two_hours );
-
-If set_http_headers is set then Expires and Cache-Control headers will
-be set to expire at the given date.
-
-Pass in a list or hash reference for finer control.
-
-    $c->cache_page(
-        last_modified   => $last_modified,
-        cache_seconds   => 24 * 60 * 60,
-        expires         => 30,
-    );
-
-Possible options are:
-
-=over 4
-
-=item last_modified
-
-Last modified time in epoch seconds.  If not set will use either the
-current Last-Modified header or the current time.
-
-=item cache_seconds
-
-This is the number of seconds to keep the page in the page cache, which may be 
-different (normally longer) then the time that client caches may use the page.
-
-=item expires
-
-This is the lenght of time in seconds that a client may cache the page
-before revalidating (by asking the server if the document has changed).
-
-Unlike the "expires" setting above
-
-
-
-=back
-
 
 =head2 clear_cached_page
 
@@ -629,6 +649,8 @@ To clear the cached value for a URI, you may call clear_cached_page.
 This method takes an absolute path or regular expression.  For obvious reasons,
 this must be called from a different controller than the cached controller. You
 may for example wish to build an admin page that lets you clear page caches.
+
+Note that clear_cached_page will generate a warning if disable_index is enabled.
 
 =head1 INTERNAL EXTENDED METHODS
 

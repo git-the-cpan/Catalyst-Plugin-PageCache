@@ -31,6 +31,13 @@ sub another_auto_count : Local {
     $c->forward( 'auto_count' );
 }
 
+sub cache_extension_header : Local {
+    my ( $self, $c, $expires ) = @_;
+    $c->cache_page( $expires );
+    $c->res->headers->header('X-Bogus-Extension' => 'True');
+    $c->res->output( 'ok' );
+}
+
 sub clear_cache : Local {
     my ( $self, $c ) = @_;
     
@@ -81,6 +88,16 @@ sub no_cache : Local {
     );
 
     $c->res->output( $c->config->{counter} );
+}
+
+sub busy : Local {
+    my ( $self, $c ) = @_;
+    
+    $c->cache_page( 1 );
+    
+    sleep 1;
+    
+    $c->res->body('busy');
 }
 
 1;
