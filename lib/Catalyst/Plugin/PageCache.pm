@@ -2,9 +2,9 @@ package Catalyst::Plugin::PageCache;
 
 use strict;
 use base qw/Class::Accessor::Fast/;
-use NEXT;
+use MRO::Compat;
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -85,25 +85,25 @@ sub dispatch {
     my $c = shift;
 
     # never serve POST request pages from cache
-    return $c->NEXT::dispatch(@_) if ( $c->req->method eq "POST" );
+    return $c->next::method(@_) if ( $c->req->method eq "POST" );
 
     my $hook =
         $c->config->{'Plugin::PageCache'}->{cache_hook}
       ? $c->can($c->config->{'Plugin::PageCache'}->{cache_hook})
       : undef;
     
-    return $c->NEXT::dispatch(@_) if ( $hook && !$c->$hook() );
+    return $c->next::method(@_) if ( $hook && !$c->$hook() );
 
-    return $c->NEXT::dispatch(@_)
+    return $c->next::method(@_)
       if ( $c->config->{'Plugin::PageCache'}->{auto_check_user}
         && $c->can('user_exists')
         && $c->user_exists);
 
     # check the page cache for a cached copy of this page
-    return $c->NEXT::dispatch(@_)
+    return $c->next::method(@_)
         unless my $key = $c->_get_page_cache_key;
 
-    return $c->NEXT::dispatch(@_)
+    return $c->next::method(@_)
         unless my $data = $c->cache->get( $key );
 
     # Time to remove page from cache?
@@ -133,7 +133,7 @@ sub dispatch {
             }
         }
 
-        return $c->NEXT::dispatch(@_);
+        return $c->next::method(@_);
     }
 
     $c->log->debug("Serving $key from page cache, expires in "
@@ -228,23 +228,23 @@ sub finalize {
     my $c = shift;
 
     # never cache POST requests
-    return $c->NEXT::finalize(@_) if ( $c->req->method eq "POST" );
+    return $c->next::method(@_) if ( $c->req->method eq "POST" );
 
     my $hook =
         $c->config->{'Plugin::PageCache'}->{cache_hook}
       ? $c->can($c->config->{'Plugin::PageCache'}->{cache_hook})
       : undef;
-    return $c->NEXT::finalize(@_) if ( $hook && !$c->$hook() );
+    return $c->next::method(@_) if ( $hook && !$c->$hook() );
 
-    return $c->NEXT::finalize(@_)
+    return $c->next::method(@_)
       if ( $c->config->{'Plugin::PageCache'}->{auto_check_user}
         && $c->can('user_exists')
         && $c->user_exists);
-    return $c->NEXT::finalize(@_) if ( scalar @{ $c->error } );
+    return $c->next::method(@_) if ( scalar @{ $c->error } );
 
     # if we already served the current request from cache, we can skip the
     # rest of this method
-    return $c->NEXT::finalize(@_) if ( $c->_page_cache_used );
+    return $c->next::method(@_) if ( $c->_page_cache_used );
 
     if (!$c->_cache_page
         && scalar @{ $c->config->{'Plugin::PageCache'}->{auto_cache} })
@@ -316,13 +316,13 @@ sub finalize {
         $c->_page_cache_not_modified( $data );
     }
 
-    return $c->NEXT::finalize(@_);
+    return $c->next::method(@_);
 }
 
 sub setup {
     my $c = shift;
 
-    $c->NEXT::setup(@_);
+    $c->next::method(@_);
 
     # allow code using old config key to work
     if ( $c->config->{page_cache} and !$c->config->{'Plugin::PageCache'} ) {

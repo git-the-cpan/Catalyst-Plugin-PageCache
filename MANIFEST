@@ -19,7 +19,6 @@ t/01use.t
 t/02pod.t
 t/03podcoverage.t
 t/04cache.t
-t/04critic.rc
 t/04critic.t
 t/05expires.t
 t/06auto_cache.t

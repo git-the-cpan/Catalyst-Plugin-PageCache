@@ -1,5 +1,8 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.22    2009-06-25 10:38:00
+        - Update to use MRO::Compat
+
 0.21    2008-10-02 10:45:00
         - Check for FileCache in new test to avoid test failures.
 
