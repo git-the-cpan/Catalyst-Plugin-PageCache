@@ -3,9 +3,8 @@ package Catalyst::Plugin::PageCache;
 use strict;
 use base qw/Class::Accessor::Fast/;
 use MRO::Compat;
-use Digest::SHA1 ();
 
-our $VERSION = '0.23';
+our $VERSION = '0.21';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -19,26 +18,31 @@ __PACKAGE__->mk_accessors('_page_cache_key');
 
 sub cache_page {
     my ( $c, @args ) = @_;
-    my %options;
 
-    # Mark that cache_page has been called but defer on selecting the time
-    # period to cache for until finalize. _get_page_cache_expiration_time has
-    # more options at that time, such as various headers which may have been set.
+    # Parameters passed in?
 
-    if (@args == 1) {
-        my $expires = shift @args;
+    if ( ref($args[0]) eq 'HASH' || @args > 1 ) {
+        my $options = ref( $args[0] ) ? shift : { @args };
 
-        # Allow specific end time
-        $expires = $expires->epoch - time()
-            if ref($expires) && $expires->can('epoch');
+        $options->{cache_seconds} = $c->config->{'Plugin::PageCache'}->{expires}
+            unless exists $options->{cache_seconds};
 
-        $options{cache_seconds} = $expires;
-    }
-    else {
-        %options = @args;
+        $c->_cache_page( $options );
+        return;
     }
 
-    $c->_cache_page( \%options );
+    my $expires = shift @args;
+
+    # Allow specific end time
+    $expires = $expires->epoch - time
+        if ref($expires) && $expires->isa('DateTime');
+
+    $expires ||= $c->config->{'Plugin::PageCache'}->{expires};
+
+    # mark the page for caching during finalize
+    if ( $expires > 0 ) {
+        $c->_cache_page( { cache_seconds => $expires } );
+    }
 }
 
 sub clear_cached_page {
@@ -80,37 +84,6 @@ sub clear_cached_page {
         );
     }
 }
-
-
-# return the time that the item should expire
-sub _get_page_cache_expiration_time {
-    my ($c, $options) = @_;
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
-    my $is_debug = $config_PageCache->{debug};
-
-    my $expires;
-
-    # Use the explicitely passed in duration if available.
-    # XXX but why then ignore it if it's <= 0 ?
-    if ($options->{cache_seconds} and $options->{cache_seconds} > 0) {
-        $c->log->debug("expires in specified $options->{cache_seconds}s")
-            if $is_debug;
-
-        $expires = time() + $options->{cache_seconds};
-    }
-    # else {
-    #   ... calculate expiry based on the response headers
-    # }
-    # If all else fails, fallback to the default 'expires' configuration value.
-    else {
-        $c->log->debug("expires in default $config_PageCache->{expires}s")
-            if $is_debug;
-        $expires = time() + $config_PageCache->{expires};
-    }
-
-    return $expires;
-}
-
 
 sub dispatch {
     my $c = shift;
@@ -197,8 +170,7 @@ sub dispatch {
 }
 
 # See if request matches last_modified date in cache
-# if so, arrange to return a 304 Not Modified status
-# and return true.
+# and return true if so.
 
 sub _page_cache_not_modified {
     my ( $c, $data ) = @_;
@@ -304,73 +276,60 @@ sub finalize {
         }
     }
 
-    if ($c->_cache_page) {
-        my $data = $c->_store_page_in_cache($c->_cache_page) ;
+    if ( my $options = $c->_cache_page ) {
+        my $key = $c->_get_page_cache_key;
+
+        my $now = time;
+        my $headers = $c->res->headers;
+
+        $c->log->debug(
+            "Caching page $key for $options->{cache_seconds} seconds"
+        ) if ($config_PageCache->{debug});
+
+        # Cache some additional metadata along with the content
+        # Some caches don't support expirations, so we do it manually
+        my $data = {
+            body => $c->res->body || undef,
+            content_type => [ $c->res->content_type ] || undef,
+            content_encoding => $c->res->content_encoding || undef,
+            create_time      => $options->{last_modified}
+                || $headers->last_modified
+                || $now,
+            expire_time => $now + $options->{cache_seconds},
+        };
+        
+        if ( $config_PageCache->{cache_headers} ) {
+            $data->{headers} = {
+                map { $_ => $headers->header($_) }
+                  $headers->header_field_names
+            };
+        }
+
+        $data->{expires} = $options->{expires} if exists $options->{expires};
+
+        my $cache = $c->cache; # curry the cache just once, here
+
+        $cache->set( $key, $data );
+
+        $c->_set_page_cache_headers( $data );  # don't forget the first time
+
+        if ( !$config_PageCache->{disable_index} ) {
+            # Keep an index cache of all pages that have been cached, for use
+            # with clear_cached_page
+            my $index = $cache->get( "_page_cache_index" ) || {};
+            $index->{$key} = 1;
+
+            # Save date in cache
+            $cache->set( "_page_cache_index", $index,
+                $config_PageCache->{no_expire});
+        }
 
         # Check for If-Modified-Since
-        $c->_page_cache_not_modified( $data ) if $data;
+        $c->_page_cache_not_modified( $data );
     }
 
     return $c->next::method(@_);
 }
-
-
-sub _store_page_in_cache {
-    my ($c, $options) = @_;
-
-    my $key = $c->_get_page_cache_key;
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
-    my $now = time();
-
-    my $headers = $c->res->headers;
-
-    # Cache some additional metadata along with the content
-    # Some caches don't support expirations, so we do it manually
-    my $data = {
-        body => $c->res->body || undef,
-        content_type => [ $c->res->content_type ] || undef,
-        content_encoding => $c->res->content_encoding || undef,
-        create_time      => $options->{last_modified}
-            || $headers->last_modified
-            || $now,
-        expire_time => $c->_get_page_cache_expiration_time($options),
-    };
-
-    return undef if $data->{expire_time} <= $now;
-
-    $c->log->debug(
-        "Caching page $key for ". ($data->{expire_time} - time()) ." seconds"
-    ) if ($config_PageCache->{debug});
-    
-    if ( $config_PageCache->{cache_headers} ) {
-        $data->{headers} = {
-            map { $_ => $headers->header($_) }
-                $headers->header_field_names
-        };
-    }
-
-    $data->{expires} = $options->{expires} if exists $options->{expires};
-
-    my $cache = $c->cache; # curry the cache just once, here
-
-    $cache->set( $key, $data );
-
-    $c->_set_page_cache_headers( $data );  # don't forget the first time
-
-    if ( !$config_PageCache->{disable_index} ) {
-        # Keep an index cache of all pages that have been cached, for use
-        # with clear_cached_page
-        my $index = $cache->get( "_page_cache_index" ) || {};
-        $index->{$key} = 1;
-
-        # Save date in cache
-        $cache->set( "_page_cache_index", $index,
-            $config_PageCache->{no_expire});
-    }
-
-    return $data;
-}
-
 
 sub setup {
     my $c = shift;
@@ -424,12 +383,11 @@ sub setup {
 sub _get_page_cache_key {
     my $c = shift;
     
-    # We can't rely on the params after the user's code has run,
-    # so we cache the key created during the initial dispatch phase
-    # and reuse it at finalize time.
+    # We can't rely on the params after the user's code has run, so
+    # use the key created during the initial dispatch phase
     return $c->_page_cache_key if ( $c->_page_cache_key );
 
-    # override key if required, else use uri path
+    # override key if required
     my $keymaker = $c->config->{'Plugin::PageCache'}->{key_maker};
     my $key = $keymaker ? $keymaker->($c) : "/" . $c->req->path;
     
@@ -438,31 +396,22 @@ sub _get_page_cache_key {
         $key = ':' . $c->language . ':' . $key;
     }
 
-    # some caches have limits on the max key length (eg for memcached it's 250
-    # minus the namespace length) so if the key is a non-trvial length then
-    # replace the tail with a sha1. (We only replace the tail because it's
-    # useful to be able to see the leading portion of the path in the debug logs)
-    if (length($key) > 100) {
-        substr($key, 100) = Digest::SHA1::sha1_hex($key); # 40 bytes
-    }
-    # Check for spaces as it's cheap insurance, just in case, for memcached
-    $key =~ s/\s/~/g;
-
-    # we always sha1 the parameters/query as they're typically long
-    # and it also avoids issues like spaces in keys for memcached
-    my $params_key;
-    my $parameters = $c->req->parameters;
-    if (%$parameters) {
-        local $Storable::canonical = 1;
-        $params_key = Storable::nfreeze($parameters);
+    if ( scalar $c->req->param ) {
+        my @params;
+        foreach my $arg ( sort keys %{ $c->req->params } ) {
+            if ( ref $c->req->params->{$arg} ) {
+                my $list = $c->req->params->{$arg};
+                push @params, map { "$arg=" . $_  } sort @{$list};
+            }
+            else {
+                push @params, "$arg=" . $c->req->params->{$arg};
+            }
+        }
+        $key .= '?' . join( '&', @params );
     }
     elsif ( my $query = $c->req->uri->query ) {
-        $params_key = $query;
+        $key .= '?' . $query;
     }
-    # use sha1 to avoid problems with over-long params or params
-    # containing values that can't be used as a key (eg spaces for memcached)
-    $key .= '?' . Digest::SHA1::sha1_hex($params_key) # 40 bytes
-        if $params_key;
 
     $c->_page_cache_key( $key );
 
@@ -677,7 +626,7 @@ Call cache_page in any controller method you wish to be cached.
 The page will be cached for $expire seconds.  Every user who visits the URI(s)
 referenced by that controller will receive the page directly from cache.  Your
 controller will not be processed again until the cache expires.  You can set
-this value to a low value, such as 60 seconds, if you have heavy traffic, to greatly
+this value to as low as 60 seconds if you have heavy traffic to greatly
 improve site performance.
 
 Pass in a DateTime object to make the cache expire at a given point in time.
@@ -705,15 +654,19 @@ Possible options are:
 
 =over 4
 
+=item last_modified
+
+Last modified time in epoch seconds.  If not set will use either the
+current Last-Modified header, or if not set, the current time.
+
 =item cache_seconds
 
 This is the number of seconds to keep the page in the page cache, which may be
 different (normally longer) than the time that client caches may store the page.
-This is the value set when only a single parameter is passed.
 
 =item expires
 
-This is the length of time in seconds that a client may cache the page
+This is the lenght of time in seconds that a client may cache the page
 before revalidating (by asking the server if the document has changed).
 
 Unlike above, this is a fixed setting that each client will see.  Regardless of
@@ -723,11 +676,6 @@ the same expires time.
 Setting zero (0) for expires will result in the page being cached, but headers
 will be sent telling the client to not cache the page.  Allows caching expensive
 content to generate, but any changes will be seen right away.
-
-=item last_modified
-
-Last modified time in epoch seconds.  If not set will use either the
-current Last-Modified header, or if not set, the current time.
 
 =back
 

@@ -1,33 +1,41 @@
-package TestApp::C::Cache;
+package TestApp::Controller::Cache;
 
 use strict;
-use base 'Catalyst::Base';
+use base 'Catalyst::Controller';
 
 sub auto : Private {
     my ( $self, $c ) = @_;
-    
+
     $c->config->{counter}++;
-    
+
     return 1;
 }
 
 sub count : Local {
     my ( $self, $c, $expires ) = @_;
-    
+
     $c->cache_page( $expires );
-    
+
     $c->res->output( $c->config->{counter} );
 }
 
 sub auto_count : Local {
     my ( $self, $c ) = @_;
-    
+
+    $c->res->output( $c->config->{counter} );
+}
+
+sub set_count : Local {
+    my ( $self, $c, $newvalue ) = @_;
+
+    $c->config->{counter} = $newvalue || 0;
+
     $c->res->output( $c->config->{counter} );
 }
 
 sub another_auto_count : Local {
     my ( $self, $c ) = @_;
-    
+
     $c->forward( 'auto_count' );
 }
 
@@ -40,17 +48,17 @@ sub cache_extension_header : Local {
 
 sub clear_cache : Local {
     my ( $self, $c ) = @_;
-    
+
     $c->clear_cached_page( '/cache/count' );
-    
+
     $c->res->output( 'ok' );
 }
 
 sub clear_cache_regex : Local {
     my ( $self, $c ) = @_;
-    
+
     $c->clear_cached_page( '/cache/.*' );
-    
+
     $c->res->output( 'ok' );
 }
 
@@ -92,12 +100,20 @@ sub no_cache : Local {
 
 sub busy : Local {
     my ( $self, $c ) = @_;
-    
+
     $c->cache_page( 1 );
-    
+
     sleep 1;
-    
+
     $c->res->body('busy');
+}
+
+sub get_key : Local {
+    my ( $self, $c ) = @_;
+
+    $c->cache_page( 1 );
+
+    $c->res->output( $c->_get_page_cache_key );
 }
 
 1;

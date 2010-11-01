@@ -1,5 +1,18 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.23    2010-11-01 21:03  r13684
+        - Updated tests to use Cache::FileCache instead of the deprecated ::FileCache.
+          Report and patch by Rod Taylor, RT#53304 & RT#47373.
+        - Fixed t/04critic.t to not fail if Test::Perl::Critic is not installed.
+        - Updated test app code to avoid deprecated constructs.
+        - Only serve GET and HEAD requests (instead of all except POST). RT#53307.
+        - Allow key_maker to be the name of a method to be called on $c. RT#53529.
+        - Assorted performance optimizations.
+        - Add cache_dispatch_hook and cache_finalize_hook to config. RT#53503.
+        - Refactored page cache storage logic, inspired by RT#53303.
+        - Use SHA1 to create cache key to limit length and charset. RT#62343.
+        - Treat the order of repeated URL parameter values as significant.
+
 0.22    2009-06-25 10:38:00
         - Update to use MRO::Compat
 

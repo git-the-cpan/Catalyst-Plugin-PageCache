@@ -2,23 +2,25 @@ package TestAppI18N;
 
 use strict;
 use Catalyst;
-use Data::Dumper;
+use File::Path qw(make_path remove_tree);
 
 our $VERSION = '0.01';
 
+my $cache_root = 't/var';
+remove_tree($cache_root);
+make_path($cache_root);
+
 TestAppI18N->config(
     name => 'TestApp-I18N',
-    cache => {
-        storage => 't/var',
-    },
     counter => 0,
+    'Plugin::Cache' => {
+        backend => { 
+            class => 'Cache::FileCache',
+            cache_root => $cache_root,
+        },
+    },
 );
 
-TestAppI18N->setup( qw/Cache::FileCache I18N PageCache/ );
-
-sub default : Private {
-    my ( $self, $c ) = @_;
-    
-}
+TestAppI18N->setup( qw/Cache I18N PageCache/ );
 
 1;

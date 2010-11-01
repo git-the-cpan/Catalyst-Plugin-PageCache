@@ -14,16 +14,13 @@ BEGIN {
     eval "use Catalyst::Plugin::I18N";
     $reason .= 'Needs Catalyst::Plugin::I18N for this test. ' if $@;
 
-    eval "use Catalyst::Plugin::Cache::FileCache";
-    $reason .= 'Needs Catalyst::Plugin::Cache::FileCache for testing.' if $@;
+    eval "use Catalyst::Plugin::Cache";
+    $reason .= 'Needs Catalyst::Plugin::Cache for testing' if $@;
 
     plan $reason
         ? ( skip_all => $reason )
         : ( tests => 25 );
 }
-
-# remove previous cache
-rmtree 't/var' if -d 't/var';
 
 use Catalyst::Test 'TestAppI18N';
 

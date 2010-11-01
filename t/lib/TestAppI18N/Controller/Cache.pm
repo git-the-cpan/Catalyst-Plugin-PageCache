@@ -1,7 +1,7 @@
-package TestAppI18N::C::Cache;
+package TestAppI18N::Controller::Cache;
 
 use strict;
-use base 'Catalyst::Base';
+use base 'Catalyst::Controller';
 
 sub auto : Private {
     my ( $self, $c ) = @_;

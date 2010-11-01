@@ -10,18 +10,15 @@ use File::Path;
 use Time::HiRes qw(time sleep);
 
 BEGIN {
-    eval "use Catalyst::Plugin::Cache::FileCache";
+    eval "use Catalyst::Plugin::Cache";
     if ( $@ ) {
-        plan skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing';
+        plan skip_all => 'needs Catalyst::Plugin::Cache for testing';
     }
 }
 
 plan $^O =~ /Win32/
     ? ( skip_all => 'Cannot run this test on Windows' )
     : ( tests => 4 );
-
-# remove previous cache
-rmtree 't/var' if -d 't/var';
 
 use Catalyst::Test 'TestApp';
 

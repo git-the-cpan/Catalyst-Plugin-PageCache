@@ -5,17 +5,11 @@ use File::Spec;
 use FindBin ();
 use Test::More;
 
-if ( !-e "$FindBin::Bin/../MANIFEST.SKIP" ) {
-    plan skip_all => 'Critic test only for developers.';
-}
-else {
-    eval { require Test::Perl::Critic };
-    if ( $@ ) {
-        plan tests => 1;
-        fail( 'You must install Test::Perl::Critic to run 04critic.t' );
-        exit;
-    }
-}
+plan skip_all => 'developer test'
+    if not -d '.svn';
+
+plan skip_all => 'requires Test::Perl::Critic'
+    if not eval { require Test::Perl::Critic };
 
 my $rcfile = File::Spec->catfile( 't', '04critic.rc' );
 Test::Perl::Critic->import( -profile => $rcfile );

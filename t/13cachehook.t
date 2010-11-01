@@ -10,16 +10,13 @@ use Test::More;
 use File::Path;
 
 BEGIN {
-    eval "use Catalyst::Plugin::Cache::FileCache";
+    eval "use Catalyst::Plugin::Cache";
     plan $@
-        ? ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' )
+        ? ( skip_all => 'needs Catalyst::Plugin::Cache for testing' )
         : ( tests => 16 );
 }
 
 # This test that options can be passed to cache.
-
-# remove previous cache
-rmtree 't/var' if -d 't/var';
 
 use Catalyst::Test 'TestApp';
 

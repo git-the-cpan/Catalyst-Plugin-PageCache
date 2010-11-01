@@ -9,9 +9,9 @@ use Test::More;
 use File::Path;
 
 BEGIN {
-    eval "use Catalyst::Plugin::Cache::FileCache";
+    eval "use Catalyst::Plugin::Cache";
     if ( $@ ) {
-        plan ( skip_all => 'needs Catalyst::Plugin::Cache::FileCache for testing' );
+        plan ( skip_all => 'needs Catalyst::Plugin::Cache for testing' );
     } else {
         eval "use DateTime";
         if ( $@ ) {
@@ -24,16 +24,14 @@ BEGIN {
 
 # This tests that a DateTime object can be passed in.
 
-# remove previous cache
-rmtree 't/var' if -d 't/var';
-
 use Catalyst::Test 'TestApp';
 
 # add config option
 TestApp->config->{'Plugin::PageCache'}->{set_http_headers} = 1;
 
 # cache a page
-my $cache_time = time;
+my $cache_time = time + 1;
+1 while time < $cache_time; # spin till clock ticks to make test more robust
 ok( my $res = request('http://localhost/cache/test_datetime'), 'request ok' );
 is( $res->content, 1, 'count is 1' );
 
