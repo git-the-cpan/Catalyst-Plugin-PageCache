@@ -49,17 +49,17 @@ sub cache_extension_header : Local {
 sub clear_cache : Local {
     my ( $self, $c ) = @_;
 
-    $c->clear_cached_page( '/cache/count' );
+    my $removed = $c->clear_cached_page( '/cache/count' );
 
-    $c->res->output( 'ok' );
+    $c->res->output( $removed );
 }
 
 sub clear_cache_regex : Local {
     my ( $self, $c ) = @_;
 
-    $c->clear_cached_page( '/cache/.*' );
+    my $removed = $c->clear_cached_page( '/cache/.*' );
 
-    $c->res->output( 'ok' );
+    $c->res->output( $removed );
 }
 
 sub test_datetime : Local {

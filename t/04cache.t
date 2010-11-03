@@ -8,13 +8,6 @@ use lib "$FindBin::Bin/lib";
 use Test::More;
 use File::Path;
 
-BEGIN {
-    eval "use Catalyst::Plugin::Cache";
-    plan $@
-        ? ( skip_all => 'needs Catalyst::Plugin::Cache for testing' )
-        : ( tests => 20 );
-}
-
 use Catalyst::Test 'TestApp';
 
 # cache a page
@@ -27,6 +20,7 @@ is( $res->content, 1, 'count is still 1 from cache' );
 
 # clear the cached page
 ok( $res = request('http://localhost/cache/clear_cache'), 'request ok' );
+is( $res->content, 1, 'clear_cache removed 1 entry' );
 
 # request again
 ok( $res = request('http://localhost/cache/count'), 'request ok' );
@@ -38,6 +32,7 @@ is( $res->content, 3, 'count is still 3 from cache' );
 
 # clear the cached page with the regex format
 ok( $res = request('http://localhost/cache/clear_cache_regex'), 'request ok' );
+is( $res->content, 1, 'clear_cache removed 1 entry' );
 
 # request again
 ok( $res = request('http://localhost/cache/count'), 'request ok' );
@@ -61,3 +56,5 @@ is( $res->content, 7, 'count after cache expired is 7' );
 # test cache of a page with a parameter-less query string
 ok( $res = request('http://localhost/cache/count/2?foo'), 'request ok' );
 is( $res->content, 8, 'count after query string is 8' );
+
+done_testing();

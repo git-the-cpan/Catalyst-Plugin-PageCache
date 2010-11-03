@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use MRO::Compat;
 use Digest::SHA1 ();
 
-our $VERSION = '0.23';
+our $VERSION = '0.30';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
@@ -41,52 +41,52 @@ sub cache_page {
     $c->_cache_page( \%options );
 }
 
+
 sub clear_cached_page {
     my ( $c, $uri ) = @_;
 
-    return unless ( $c->can( 'cache' ) );
+    return undef unless $c->can( 'cache' );
 
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
+    my $is_debug  = $pc_config->{debug};
     
     # Warn if index was disabled
-    if ( $config_PageCache->{disable_index} ) {
-        $c->log->warn("Warning: clear_cached_page($uri) did not clear the cache, disable_index is set");
+    my $index_page_key = $pc_config->{index_page_key} or do {
+        $c->log->warn("clear_cached_page($uri) did not clear the cache because disable_index is set");
         return;
-    }
-    
-    my $is_debug = $config_PageCache->{debug};
-
-    my $removed = 0;
+    };
     
     my $cache = $c->cache; # curry the cache just once, here
 
-    my $index = $cache->get( "_page_cache_index" ) || {};
+    my $index = $cache->get( $index_page_key ) || {};
 
-    foreach my $key ( keys %{$index} ) {
-        if ( $key =~ /^(?::[^:]+:)?$uri$/xms ) {
-            $cache->remove( $key );
-            delete $index->{$key};
-            $removed++;
-        
-            $c->log->debug( "Removed $key from page cache" ) if $is_debug;
-        }
+    my $removed = 0;
+    foreach my $index_key ( keys %$index ) {
+
+        # find matching entries, ignoring the language prefix
+        next unless $index_key =~ /^ $uri (?:\#.*)? $/x;
+
+        # delete from the index and remove the corresponding cache entry
+        # (which may have a different key, e.g., sha1 encoded)
+        my $cache_key = delete $index->{$index_key};
+        $cache->remove( $cache_key );
+        $removed++;
+
+        $c->log->debug( "Removed $index_key from page cache" ) if $is_debug;
     }
 
-    if ( $removed ) {
-        $cache->set(
-            "_page_cache_index",
-            $index,
-            $config_PageCache->{no_expire}
-        );
-    }
+    $cache->set( $index_page_key, $index, $pc_config->{no_expire} )
+        if $removed;
+
+    $removed;
 }
 
 
 # return the time that the item should expire
 sub _get_page_cache_expiration_time {
     my ($c, $options) = @_;
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
-    my $is_debug = $config_PageCache->{debug};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
+    my $is_debug = $pc_config->{debug};
 
     my $expires;
 
@@ -103,9 +103,9 @@ sub _get_page_cache_expiration_time {
     # }
     # If all else fails, fallback to the default 'expires' configuration value.
     else {
-        $c->log->debug("expires in default $config_PageCache->{expires}s")
+        $c->log->debug("expires in default $pc_config->{expires}s")
             if $is_debug;
-        $expires = time() + $config_PageCache->{expires};
+        $expires = time() + $pc_config->{expires};
     }
 
     return $expires;
@@ -120,14 +120,14 @@ sub dispatch {
     return $c->next::method(@_)
         unless $c->req->method =~ m/^(?:GET|HEAD)$/;
 
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
 
-    my $hook_name = $config_PageCache->{cache_dispatch_hook} || $config_PageCache->{cache_hook};
+    my $hook_name = $pc_config->{cache_dispatch_hook} || $pc_config->{cache_hook};
     my $hook = $hook_name ? $c->can($hook_name) : undef;
     return $c->next::method(@_) if ( $hook && !$c->$hook() );
 
     return $c->next::method(@_)
-      if ( $config_PageCache->{auto_check_user}
+      if ( $pc_config->{auto_check_user}
         && $c->can('user_exists')
         && $c->user_exists);
 
@@ -143,7 +143,7 @@ sub dispatch {
     # Time to remove page from cache?
 
     if ( $data->{expire_time} && $data->{expire_time} <= time ) {
-        if ( my $busy_lock = $config_PageCache->{busy_lock} ) {
+        if ( my $busy_lock = $pc_config->{busy_lock} ) {
             # Extend the expiration time for others while
             # this caller refreshes the cache
             $data->{expire_time} = time() + $busy_lock;
@@ -151,19 +151,19 @@ sub dispatch {
             $cache->set( $key, $data );
             
             $c->log->debug( "$key has expired, being refreshed for $busy_lock seconds" )
-                if ($config_PageCache->{debug});
+                if ($pc_config->{debug});
         }
         else {
             $c->log->debug( "Expiring $key from page cache" )
-              if ($config_PageCache->{debug});
+              if ($pc_config->{debug});
 
             $cache->remove( $key );
 
-            if ( !$config_PageCache->{disable_index} ) {
-                my $index = $cache->get( "_page_cache_index" ) || {};
-                delete $index->{$key};
-                $cache->set( "_page_cache_index", $index,
-                    $config_PageCache->{no_expire});
+            if ( my $index_page_key = $pc_config->{index_page_key} ) {
+                my $index = $cache->get( $index_page_key ) || {};
+                my $found = delete $index->{ $data->{index_key} };
+                $cache->set( $index_page_key, $index, $pc_config->{no_expire})
+                    if $found;
             }
         }
 
@@ -173,7 +173,7 @@ sub dispatch {
     $c->log->debug("Serving $key from page cache, expires in "
           . ($data->{expire_time} - time)
           . " seconds")
-        if ($config_PageCache->{debug});
+        if ($pc_config->{debug});
 
     $c->_page_cache_used( 1 );
 
@@ -222,9 +222,9 @@ sub _page_cache_not_modified {
 sub _set_page_cache_headers {
     my ( $c, $data ) = @_;
     my $headers = $c->res->headers;
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
 
-    if ( $config_PageCache->{cache_headers} ) {
+    if ( $pc_config->{cache_headers} ) {
         for my $header_key ( keys %{ $data->{headers} || {} } ) {
             $headers->header(
                 $header_key => $data->{headers}->{$header_key}
@@ -232,7 +232,7 @@ sub _set_page_cache_headers {
         }
     }
     
-    return unless $config_PageCache->{set_http_headers};
+    return unless $pc_config->{set_http_headers};
 
     if ( exists $data->{expires} ) {
 
@@ -267,14 +267,14 @@ sub finalize {
     # never cache POST requests
     return $c->next::method(@_) if ( $c->req->method eq "POST" );
 
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
 
-    my $hook_name = $config_PageCache->{cache_dispatch_hook} || $config_PageCache->{cache_hook};
+    my $hook_name = $pc_config->{cache_dispatch_hook} || $pc_config->{cache_hook};
     my $hook = $hook_name ? $c->can($hook_name) : undef;
     return $c->next::method(@_) if ( $hook && !$c->$hook() );
 
     return $c->next::method(@_)
-      if ( $config_PageCache->{auto_check_user}
+      if ( $pc_config->{auto_check_user}
         && $c->can('user_exists')
         && $c->user_exists);
     return $c->next::method(@_) if ( scalar @{ $c->error } );
@@ -284,7 +284,7 @@ sub finalize {
     return $c->next::method(@_) if ( $c->_page_cache_used );
 
     if (!$c->_cache_page
-        && scalar @{ $config_PageCache->{auto_cache} })
+        && scalar @{ $pc_config->{auto_cache} })
     {
 
         # is this page part of the auto_cache list?
@@ -292,12 +292,12 @@ sub finalize {
 
         # For performance, this should be moved to setup, and generate a hash.
         AUTO_CACHE:
-        foreach my $auto (@{ $config_PageCache->{auto_cache} })
+        foreach my $auto (@{ $pc_config->{auto_cache} })
         {
             next if $auto =~ m/^\d$/;
             if ( $path =~ /^$auto$/ ) {
                 $c->log->debug( "Auto-caching page $path" )
-                    if ($config_PageCache->{debug});
+                    if ($pc_config->{debug});
                 $c->cache_page;
                 last AUTO_CACHE;
             }
@@ -319,7 +319,7 @@ sub _store_page_in_cache {
     my ($c, $options) = @_;
 
     my $key = $c->_get_page_cache_key;
-    my $config_PageCache = $c->config->{'Plugin::PageCache'};
+    my $pc_config = $c->config->{'Plugin::PageCache'};
     my $now = time();
 
     my $headers = $c->res->headers;
@@ -340,16 +340,27 @@ sub _store_page_in_cache {
 
     $c->log->debug(
         "Caching page $key for ". ($data->{expire_time} - time()) ." seconds"
-    ) if ($config_PageCache->{debug});
+    ) if ($pc_config->{debug});
     
-    if ( $config_PageCache->{cache_headers} ) {
+    if ( $pc_config->{cache_headers} ) {
         $data->{headers} = {
-            map { $_ => $headers->header($_) }
-                $headers->header_field_names
+            map { $_ => $headers->header($_) } $headers->header_field_names
         };
     }
 
-    $data->{expires} = $options->{expires} if exists $options->{expires};
+    if ($pc_config->{index_page_key}) {
+        # We can't simply use $key for $index_key because $key may have been
+        # mangled by sha1 and/or a key_maker hook.  We include $key to ensure
+        # unique entries in the index in cases where a given uri might produce
+        # different results eg due to headers like language.
+        $data->{index_key}  = '/'.$c->req->path;
+        $data->{index_key} .= '?'.$c->req->uri->query if $c->req->uri->query;
+        $data->{index_key} .= '#'.$key;
+    }
+
+    if (exists $options->{expires}) {
+        $data->{expires} = $options->{expires}
+    }
 
     my $cache = $c->cache; # curry the cache just once, here
 
@@ -357,15 +368,13 @@ sub _store_page_in_cache {
 
     $c->_set_page_cache_headers( $data );  # don't forget the first time
 
-    if ( !$config_PageCache->{disable_index} ) {
+    if ( $data->{index_key} ) {
         # Keep an index cache of all pages that have been cached, for use
-        # with clear_cached_page
-        my $index = $cache->get( "_page_cache_index" ) || {};
-        $index->{$key} = 1;
-
-        # Save date in cache
-        $cache->set( "_page_cache_index", $index,
-            $config_PageCache->{no_expire});
+        # with clear_cached_page. This is error prone. See KNOWN ISSUES.
+        my $index_page_key = $pc_config->{index_page_key};
+        my $index = $cache->get($index_page_key) || {};
+        $index->{ $data->{index_key} } = $key;
+        $cache->set($index_page_key, $index, $pc_config->{no_expire});
     }
 
     return $data;
@@ -382,15 +391,26 @@ sub setup {
         $c->config->{'Plugin::PageCache'} = delete $c->config->{page_cache};
     }
 
-    my $config_PageCache = $c->config->{'Plugin::PageCache'} ||= {};
+    my $pc_config = $c->config->{'Plugin::PageCache'} ||= {};
 
-    $config_PageCache->{auto_cache}       ||= [];
-    $config_PageCache->{expires}          ||= 60 * 5;
-    $config_PageCache->{cache_headers}    ||= 0;
-    $config_PageCache->{set_http_headers} ||= 0;
-    $config_PageCache->{disable_index}    ||= 0;
-    $config_PageCache->{busy_lock}        ||= 0;
-    $config_PageCache->{debug}            ||= $c->debug;
+    $pc_config->{auto_cache}       ||= [];
+    $pc_config->{expires}          ||= 60 * 5;
+    $pc_config->{cache_headers}    ||= 0;
+    $pc_config->{set_http_headers} ||= 0;
+    $pc_config->{busy_lock}        ||= 0;
+    $pc_config->{debug}            ||= $c->debug;
+
+    # default the page key to include the app name to give some measure
+    # of protection if the cache doesn't have a namespace set.
+    $pc_config->{index_page_key} = "$c._page_cache_index"
+        unless defined $pc_config->{index_page_key};
+
+    if (not defined $pc_config->{disable_index}) {
+        warn "Plugin::PageCache config does not include disable_index, which currently defaults false but may default true in future\n";
+        $pc_config->{disable_index} = 0;
+    }
+    $pc_config->{index_page_key} = undef
+        if $pc_config->{disable_index};
 
     # detect the cache plugin being used and set appropriate
     # never-expires syntax
@@ -405,7 +425,7 @@ sub setup {
 
         # Older Cache plugins
         if ( $cache->isa('Cache::FileCache') ) {
-            $config_PageCache->{no_expire} = "never";
+            $pc_config->{no_expire} = "never";
         }
         elsif ($cache->isa('Cache::Memcached')
             || $cache->isa('Cache::FastMmap'))
@@ -413,7 +433,7 @@ sub setup {
 
           # Memcached defaults to 'never' when not given an expiration
           # In FastMmap, it's not possible to set an expiration
-            $config_PageCache->{no_expire} = undef;
+            $pc_config->{no_expire} = undef;
         }
     }
     else {
@@ -519,7 +539,6 @@ Catalyst::Plugin::PageCache - Cache the output of entire pages
 
     $c->clear_cached_page( '/list' );
 
-
     # Expire at a specific time
     $c->cache_page( $datetime_object );
 
@@ -593,10 +612,20 @@ time.  URIs may be specified as absolute: '/list' or as a regex: '/view/.*'
 
     disable_index => 1
 
-In order to support the C<clear_cached_page> method, PageCache keeps an index of
-all cached pages.  If you don't intend to use C<clear_cached_page>, you may 
-enable this config option to avoid the overhead of creating and updating the
-cache index.  This option is disabled by default.
+To support the L</clear_cached_page> method, PageCache attempts keep an index
+of all cached pages. This adds overhead by performing extra cache reads and
+writes to maintain the (possibly very large) page index. It's also not
+reliable, see L</KNOWN ISSUES>.
+
+If you don't intend to use C<clear_cached_page>, you should enable this config
+option to avoid the overhead of creating and updating the cache index.  This
+option is currently disabled (i.e. the page index is enabled) by default but
+that may change in a future release.
+
+    index_page_key => '...'
+
+The key string used for the index, Defaults to a string that includes the name
+of the Catalyst app class.
 
     busy_lock => 10
 
@@ -613,9 +642,12 @@ previously cached page.  This option is disabled by default.
     debug => 1
 
 This will print additional debugging information to the Catalyst log.  You will
-need to have -Debug enabled to see these messages.  You can also specify an
-optional config parameter auto_check_user. If this option is enabled,
-automatic caching is disabled for logged in users.
+need to have -Debug enabled to see these messages.
+
+    auto_check_user => 1
+
+If this option is enabled, automatic caching is disabled for logged in users
+i.e., if the app class has a user_exists() method and it returns true.
 
     cache_hook => 'cache_hook_method'
     cache_finalize_hook => 'cache_finalize_hook_method'
@@ -733,16 +765,22 @@ current Last-Modified header, or if not set, the current time.
 
 =head2 clear_cached_page
 
-To clear the cached value for a URI, you may call clear_cached_page.
+To clear the cached pages for a URI, you may call clear_cached_page.
 
     $c->clear_cached_page( '/view/userlist' );
     $c->clear_cached_page( '/view/.*' );
+    $c->clear_cached_page( '/view/.*\?.*\bparam=value\b' );
 
-This method takes an absolute path or regular expression.  For obvious reasons,
-this must be called from a different controller than the cached controller. You
-may for example wish to build an admin page that lets you clear page caches.
+This method takes an absolute path or regular expression.
+Returns the number of matching entries found in the index.
+A warning will be generated if the page index is disabled (see L</CONFIGURATION>).
 
-Note that clear_cached_page will generate a warning if disable_index is enabled.
+The argument is matched against all the keys in the page index.
+The page index keys include the request path and query string, if any.
+
+Typically you'd call this from a different controller than the cached
+controller. You may for example wish to build an admin page that lets you clear
+page caches.
 
 =head1 INTERNAL EXTENDED METHODS
 
@@ -764,6 +802,10 @@ If your application uses L<Catalyst::Plugin::I18N> for localization, a
 separate cache key will be used for each language a page is displayed in.
 
 =head1 KNOWN ISSUES
+
+The page index, used to support the L</clear_cached_page> method is unreliable
+because it uses a read-modify-write approach which will loose data if more than
+one process attempts to update the page index at the same time.
 
 It is not currently possible to cache pages served from the Static plugin.  If
 you're concerned enough about performance to use this plugin, you should be

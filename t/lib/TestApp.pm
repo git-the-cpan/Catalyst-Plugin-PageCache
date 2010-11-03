@@ -14,6 +14,7 @@ TestApp->config(
     name => 'TestApp',
     counter => 0,
     'Plugin::Cache' => {
+        disable_index => 0,
         backend => {
             class => 'Cache::FileCache',
             cache_root => $cache_root,

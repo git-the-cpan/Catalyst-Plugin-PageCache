@@ -4,9 +4,11 @@ name 'Catalyst-Plugin-PageCache';
 all_from 'lib/Catalyst/Plugin/PageCache.pm';
 
 requires 'Catalyst::Runtime' => '0';
-requires 'Test::More';
 requires 'MRO::Compat' => '0.10';
 requires 'Digest::SHA1' => '0';
+
+test_requires 'Test::More' => 0;
+test_requires 'Catalyst::Plugin::Cache' => '0.10';
 test_requires 'Cache::FileCache' => 0;
 
 auto_install;

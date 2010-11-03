@@ -1,6 +1,6 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
-0.23    2010-11-01 21:03  r13684
+0.30    2010-11-03 16:03  r13688
         - Updated tests to use Cache::FileCache instead of the deprecated ::FileCache.
           Report and patch by Rod Taylor, RT#53304 & RT#47373.
         - Fixed t/04critic.t to not fail if Test::Perl::Critic is not installed.
@@ -12,6 +12,14 @@ Revision history for Perl extension Catalyst::Plugin::PageCache
         - Refactored page cache storage logic, inspired by RT#53303.
         - Use SHA1 to create cache key to limit length and charset. RT#62343.
         - Treat the order of repeated URL parameter values as significant.
+        Changes to page index logic used by clear_cached_page():
+        - Documented race-hazard risks with page index concept.
+        - Reduced the race-hazard risk in one scenario.
+        - Added app class name to index key for added safety.
+        - clear_cached_page() now returns the number of entries matched.
+        - page index keys are original /path?query not altered by key_maker or sha1.
+        - Now warns if disable_index is not explicitly set in config.
+        - disable_index may default true in a future release.
 
 0.22    2009-06-25 10:38:00
         - Update to use MRO::Compat
