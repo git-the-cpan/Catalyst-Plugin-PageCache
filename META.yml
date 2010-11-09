@@ -3,9 +3,11 @@ abstract: 'Cache the output of entire pages'
 author:
   - 'Andy Grundman, <andy@hybridized.org>'
 build_requires:
+  Cache::Cache: 1.04
   Cache::FileCache: 0
   Catalyst::Plugin::Cache: 0.10
   ExtUtils::MakeMaker: 6.42
+  File::Path: 2.07
   Test::More: 0
 configure_requires:
   ExtUtils::MakeMaker: 6.42
@@ -27,4 +29,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: http://dev.catalyst.perl.org/repos/Catalyst/trunk/Catalyst-Plugin-PageCache/
-version: 0.30
+version: 0.31

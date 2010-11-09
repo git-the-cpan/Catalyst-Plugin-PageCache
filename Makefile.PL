@@ -10,6 +10,8 @@ requires 'Digest::SHA1' => '0';
 test_requires 'Test::More' => 0;
 test_requires 'Catalyst::Plugin::Cache' => '0.10';
 test_requires 'Cache::FileCache' => 0;
+test_requires 'Cache::Cache' => '1.04'; # for Cache::FileCache (which has no version)
+test_requires 'File::Path' => '2.07';
 
 auto_install;
 resources repository => 'http://dev.catalyst.perl.org/repos/Catalyst/trunk/Catalyst-Plugin-PageCache/';

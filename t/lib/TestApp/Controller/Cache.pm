@@ -103,9 +103,9 @@ sub busy : Local {
 
     $c->cache_page( 1 );
 
-    sleep 1;
+    sleep 2;
 
-    $c->res->body('busy');
+    $c->res->output( $c->config->{counter} );
 }
 
 sub get_key : Local {

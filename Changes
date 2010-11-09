@@ -1,5 +1,11 @@
 Revision history for Perl extension Catalyst::Plugin::PageCache
 
+0.31    2010-11-09
+        - Fixed config in test apps to silence warnings from tests.
+        - Fixed module version number.
+        - Require File::Path 2.07.
+        - Made t/15busy_lock.t test more robust
+
 0.30    2010-11-03 16:03  r13688
         - Updated tests to use Cache::FileCache instead of the deprecated ::FileCache.
           Report and patch by Rod Taylor, RT#53304 & RT#47373.

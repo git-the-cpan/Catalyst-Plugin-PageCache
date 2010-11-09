@@ -5,7 +5,7 @@ use base qw/Class::Accessor::Fast/;
 use MRO::Compat;
 use Digest::SHA1 ();
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 # Do we need to cache the current page?
 __PACKAGE__->mk_accessors('_cache_page');
